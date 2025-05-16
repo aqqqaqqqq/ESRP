@@ -4,7 +4,7 @@ Check out [**`OmniGibson`**'s documentation](https://behavior.stanford.edu/omnig
 ### Dataset
 Get the dataset from [Dataset](https://huggingface.co/datasets/serendipity800/ESRP-PD) and install it according to its requirements.
 
-##Examples
+### Examples
 Use
 <pre> python -m omnigibson.examples.learning.rearrange_rllib </pre>
 to try out our ESRP's training!
