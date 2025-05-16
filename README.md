@@ -21,6 +21,12 @@ split_train_valid_test_dataset.py
 </pre>
 These files use absoulte path, please modify them before using.
 
+### Dataset Preprocessing
+#### Mesh Textures
+Before you start to run any script, run ```python -m omnigibson.create_mesh``` to create the materials of meshes.
+#### Before IL
+Run ```python -m omnigibson.baseline.IL.split_scenes``` to split dataset into train, valid and test.
+
 ### Examples
 #### RL
 - Train
