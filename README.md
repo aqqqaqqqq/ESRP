@@ -24,12 +24,16 @@ These files use absoulte path, please modify them before using.
 ### Examples
 #### RL
 - Train
+  
   Use <pre> python -m omnigibson.examples.learning.rearrange_rllib </pre> to try out PPO training, the trained model will be saved in the **save_models** folder at the same level as **omnigibson**.
 - Test
+  
   You can test the model by modifying the model and test data paths in **eval\_model.py**. <pre> python -m omnigibson.examples.learning.eval_model </pre> We also provide a test data processing script, **analyse\_data.py**, in **omnigibson.examples.learning**.
 #### IL
 - Train
+  
   Use <pre> python -m omnigibson.baseline.IL.train_lstm </pre> to train a model with LSTM, while use <pre> python -m omnigibson.baseline.IL.train </pre> to train a model without it. The trained model will be saved in the **new_checkpoint** folder under the folder **IL**.
 - Test
-  Use <pre> python -m omnigibson.baseline.IL.evaluate </pre> to test a model with LSTM, while use <pre> python -m omnigibson.baseline.IL.evaluate_no_lstm </pre> to test a model without it. The result will be saved in the customized path given in the above scripts.
+  
+  Use <pre> python -m omnigibson.baseline.IL.evaluate </pre> to test a model with LSTM, while use <pre> python -m omnigibson.baseline.IL.evaluate_no_lstm </pre> to test a model without it. The result will be saved in the customized path given in the above scripts.We also provide test data processing script **metrics.py** in **omnigibson.baseline.IL**
 
