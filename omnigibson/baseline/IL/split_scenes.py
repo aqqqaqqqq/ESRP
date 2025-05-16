@@ -1,74 +1,63 @@
 import os
 import glob
-import random
 import shutil
 
-def split_scenes(root_dir, png_root_dir, train_dir, val_dir, val_ratio=0.1, seed=42):
+def build_subset_from_list(
+    scene_list_file: str,
+    npz_root: str,
+    png_root: str,
+    output_root: str
+):
     """
-    root_dir:     放 .npz 场景文件的目录
-    png_root_dir: 放场景对应 png 的根目录，结构 scene_name/*.png
-    train_dir:    输出的训练集根目录
-    val_dir:      输出的验证集根目录
+    scene_list_file: 存放场景名（不含扩展名），每行一个
+    npz_root:        源 .npz 场景文件目录
+    png_root:        源 png 根目录，结构 png_root/scene_name/*.png
+    output_root:     输出的子集根目录
     """
-    os.makedirs(train_dir, exist_ok=True)
-    os.makedirs(val_dir,   exist_ok=True)
+    os.makedirs(output_root, exist_ok=True)
 
-    # 找到所有场景 .npz
-    scenes = glob.glob(os.path.join(root_dir, '*.npz'))
-    scenes.sort()
-    random.seed(seed)
-    random.shuffle(scenes)
+    with open(scene_list_file, 'r') as f:
+        scene_names = [line.strip() for line in f if line.strip()]
 
-    n_val = max(1, int(len(scenes) * val_ratio))
-    val_scenes   = scenes[:n_val]
-    train_scenes = scenes[n_val:]
+    for scene_name in scene_names:
+        src_npz = os.path.join(npz_root, scene_name + '.npz')
+        if not os.path.isfile(src_npz):
+            print(f"⚠️ 未找到 .npz 文件: {src_npz}")
+            continue
 
-    def _copy_subset(scene_list, target_root):
-        for npz_path in scene_list:
-            scene_name = os.path.splitext(os.path.basename(npz_path))[0]
-            dest_subdir = os.path.join(target_root, scene_name)
-            os.makedirs(dest_subdir, exist_ok=True)
+        dest_subdir = os.path.join(output_root, scene_name)
+        os.makedirs(dest_subdir, exist_ok=True)
 
-            # 拷贝 .npz
-            shutil.copy(npz_path, dest_subdir)
+        # 拷贝 .npz
+        shutil.copy(src_npz, dest_subdir)
 
-            # 从 png_root_dir/scene_name 下拷贝第一张 png
-            png_dir = os.path.join(png_root_dir, scene_name)
-            if os.path.isdir(png_dir):
-                png_files = glob.glob(os.path.join(png_dir, '*.png'))
-                if png_files:
-                    src_png = png_files[0]  # 取第一张
-                    shutil.copy(src_png, dest_subdir)
-                else:
-                    print(f"⚠️ 目录存在，但未找到 png: {png_dir}")
+        # 拷贝第一张 png
+        png_dir = os.path.join(png_root, scene_name)
+        if os.path.isdir(png_dir):
+            png_files = glob.glob(os.path.join(png_dir, '*.png'))
+            if png_files:
+                first_png = sorted(png_files)[0]
+                shutil.copy(first_png, dest_subdir)
             else:
-                print(f"⚠️ 未找到 png 源目录: {png_dir}")
-
-    _copy_subset(train_scenes, train_dir)
-    _copy_subset(val_scenes,   val_dir)
-
-    print(f"总场景数: {len(scenes)}, 训练场景: {len(train_scenes)}, 验证场景: {len(val_scenes)}")
-
-def write2txt(train_dir, val_dir):
-    for scene_name in os.listdir(train_dir):
-        with open("C:/Users/Admin/Desktop/OmniGibson-Rearrange/train_data.txt", 'a') as f:
-            f.write(f"{scene_name}" + '\n')
-    for scene_name in os.listdir(val_dir):
-        with open("C:/Users/Admin/Desktop/OmniGibson-Rearrange/test_data.txt", 'a') as f:
-            f.write(f"{scene_name}" + '\n')
+                print(f"⚠️ 目录存在，但未找到 png: {png_dir}")
+        else:
+            print(f"⚠️ 未找到 png 源目录: {png_dir}")
 
 if __name__ == '__main__':
-    ROOT        = 'imitation_data'           # 源 .npz 场景目录
-    PNG_ROOT    = 'C:/Users/Admin/Desktop/OmniGibson-Rearrange/omnigibson/data/3d_front/scenes'           # 放各场景子文件夹的根目录
-    TRAIN_DIR   = 'imitation_data_train'     # 拆分后训练集根目录
-    VAL_DIR     = 'imitation_data_val'       # 拆分后验证集根目录
+    # ———— 配置区域 ————
+    NPZ_ROOT      = 'imitation_data'     # 源 .npz 场景目录
+    PNG_ROOT      = 'C:/Users/Admin/Desktop/OmniGibson-Rearrange/omnigibson/data/3d_front/scenes'  # 你的 png 根目录
+    TRAIN_LIST    = 'train_data.txt'          # 训练集场景名列表
+    VAL_LIST      = 'valid_data.txt'            # 验证集场景名列表
+    TEST_LIST     = 'test_data.txt'           # 测试集场景名列表
 
-    split_scenes(
-        root_dir     = ROOT,
-        png_root_dir = PNG_ROOT,
-        train_dir    = TRAIN_DIR,
-        val_dir      = VAL_DIR,
-        val_ratio    = 0.1,
-        seed         = 42
-    )
-    write2txt(TRAIN_DIR, VAL_DIR)
+    TRAIN_DIR     = 'imitation_data_train_'
+    VAL_DIR       = 'imitation_data_val_'
+    TEST_DIR      = 'imitation_data_test_'
+    # ————————————————
+
+    build_subset_from_list(TRAIN_LIST, NPZ_ROOT, PNG_ROOT, TRAIN_DIR)
+    build_subset_from_list(VAL_LIST,   NPZ_ROOT, PNG_ROOT, VAL_DIR)
+    build_subset_from_list(TEST_LIST,  NPZ_ROOT, PNG_ROOT, TEST_DIR)
+
+    print("Done.")  
