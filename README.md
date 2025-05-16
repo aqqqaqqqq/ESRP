@@ -32,7 +32,7 @@ These files use absoulte path, please modify them before using.
 #### IL
 - Train
   
-  Use <pre> python -m omnigibson.baseline.IL.train_lstm </pre> to train a model with LSTM, while use <pre> python -m omnigibson.baseline.IL.train </pre> to train a model without it. The trained model will be saved in the **new_checkpoint** folder under the folder **IL**.
+  Use <pre> python -m omnigibson.baseline.IL.train_lstm </pre> to train a model with LSTM, while use <pre> python -m omnigibson.baseline.IL.train </pre> to train a model without it. The trained model will be saved in the **new\_checkpoint** or **checkpoint** folder under the folder **IL**.
 - Test
   
   Use <pre> python -m omnigibson.baseline.IL.evaluate </pre> to test a model with LSTM, while use <pre> python -m omnigibson.baseline.IL.evaluate_no_lstm </pre> to test a model without it. The result will be saved in the customized path given in the above scripts.We also provide test data processing script **metrics.py** in **omnigibson.baseline.IL**
