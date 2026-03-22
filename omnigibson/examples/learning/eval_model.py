@@ -182,6 +182,11 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
         eval_dict['arrival_num'] = arrival_num
         eval_dict['init_potential'] = _init_potential
         eval_dict['fini_potential'] = _final_potential
+        eval_dict['first_grasp_step'] = infos[-1]['eval_metrics']['first_grasp_step']
+        eval_dict['released_before_target'] = infos[-1]['eval_metrics']['released_before_target']
+        eval_dict['grasp_events'] = infos[-1]['eval_metrics']['grasp_events']
+        eval_dict['release_events'] = infos[-1]['eval_metrics']['release_events']
+        eval_dict['object_event_history'] = infos[-1]['eval_metrics']['object_event_history']
 
 
         each_arrival.append(arrival_num / eval_dict['obj_num']) 

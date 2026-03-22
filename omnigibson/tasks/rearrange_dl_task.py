@@ -66,6 +66,12 @@ class RearrangeDlTask(BaseTask):
         self.objects_current_potential = {}
         self.objects_target_polygon = {}
         self.objects_current_polygon = {}
+        self._first_grasp_step = None
+        self._released_before_target = False
+        self._grasp_events = []
+        self._release_events = []
+        self._object_event_history = {}
+        self._active_grasp_events = {}
 
         # Run super
         super().__init__()
@@ -240,6 +246,16 @@ class RearrangeDlTask(BaseTask):
                 'pos': T.l2_distance(pos, t_pos), 
                 'ori': dis_ori
                 }
+
+    def _get_object_distance_to_target(self, object_name):
+        if object_name is None or object_name not in self.objects_current_potential:
+            return None
+        return float(self.objects_current_potential[object_name]["pos"])
+
+    def _append_object_event(self, object_name, event):
+        if object_name not in self._object_event_history:
+            self._object_event_history[object_name] = []
+        self._object_event_history[object_name].append(event)
             
     def get_fetch(self, fetch_if, fetch_name):
         self._fetch_if = fetch_if
@@ -267,6 +283,12 @@ class RearrangeDlTask(BaseTask):
         self._fetch_if = -1
         self._fetch_name = None
         self._last_name = None
+        self._first_grasp_step = None
+        self._released_before_target = False
+        self._grasp_events = []
+        self._release_events = []
+        self._object_event_history = {}
+        self._active_grasp_events = {}
         
     def _reset_agent(self, env):
         # Reset agent
@@ -311,6 +333,68 @@ class RearrangeDlTask(BaseTask):
         new_robot_pos, _ = env.robots[self._robot_idn].get_position_orientation(frame = "scene")
         self._path_length += T.l2_distance(self._current_robot_pos, new_robot_pos)
         self._current_robot_pos = new_robot_pos
+
+        current_step = env.episode_steps + 1
+        if self._fetch_if == 1 and self._first_grasp_step is None:
+            self._first_grasp_step = current_step
+        if self._fetch_if == 1 and self._fetch_name is not None:
+            distance_to_target = self._get_object_distance_to_target(self._fetch_name)
+            grasp_event = {
+                "event_type": "grasp",
+                "object_name": self._fetch_name,
+                "step": current_step,
+                "distance_to_target": distance_to_target,
+                "grasp_count_for_object": sum(
+                    event["event_type"] == "grasp" for event in self._object_event_history.get(self._fetch_name, [])
+                ) + 1,
+            }
+            self._grasp_events.append(grasp_event)
+            self._append_object_event(self._fetch_name, grasp_event)
+            self._active_grasp_events[self._fetch_name] = grasp_event
+
+        elif self._fetch_if == 0 and self._last_name is not None:
+            released_on_target = self.check_target(self._last_name)
+            release_distance = self._get_object_distance_to_target(self._last_name)
+            active_grasp_event = self._active_grasp_events.pop(self._last_name, None)
+            grasp_step = active_grasp_event["step"] if active_grasp_event is not None else None
+            grasp_distance = (
+                active_grasp_event["distance_to_target"] if active_grasp_event is not None else None
+            )
+            if grasp_distance is None or release_distance is None:
+                distance_change = None
+            else:
+                if release_distance < grasp_distance:
+                    distance_change = "closer"
+                elif release_distance > grasp_distance:
+                    distance_change = "farther"
+                else:
+                    distance_change = "unchanged"
+
+            release_event = {
+                "event_type": "release",
+                "object_name": self._last_name,
+                "step": current_step,
+                "grasp_step": grasp_step,
+                "steps_since_grasp": current_step - grasp_step if grasp_step is not None else None,
+                "distance_to_target_at_grasp": grasp_distance,
+                "distance_to_target_at_release": release_distance,
+                "distance_change_vs_grasp": distance_change,
+                "released_on_target": released_on_target,
+                "released_before_target": not released_on_target,
+            }
+            self._release_events.append(release_event)
+            self._append_object_event(self._last_name, release_event)
+
+            if self._first_grasp_step is not None and len(self._release_events) == 1:
+                self._released_before_target = not released_on_target
+
+        info["eval_metrics"] = {
+            "first_grasp_step": self._first_grasp_step,
+            "released_before_target": self._released_before_target,
+            "grasp_events": self._grasp_events,
+            "release_events": self._release_events,
+            "object_event_history": self._object_event_history,
+        }
         self._fetch_if = -1
 
         return reward, done, info
