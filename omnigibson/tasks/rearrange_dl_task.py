@@ -67,8 +67,6 @@ class RearrangeDlTask(BaseTask):
         self.objects_target_polygon = {}
         self.objects_current_polygon = {}
 
-        
-
         # Run super
         super().__init__()
 
