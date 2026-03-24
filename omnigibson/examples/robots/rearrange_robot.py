@@ -18,8 +18,8 @@ matplotlib.use('Agg')
 profiler = cProfile.Profile() 
 
 # We don't need object states nor transitions rules, so we disable them now, and also enable flatcache for maximum speed
-gm.ENABLE_OBJECT_STATES = True
-gm.ENABLE_TRANSITION_RULES = True
+gm.ENABLE_OBJECT_STATES = False
+gm.ENABLE_TRANSITION_RULES = False
 gm.ENABLE_FLATCACHE = True
 gm.RENDER_VIEWER_CAMERA = True
 
@@ -54,6 +54,40 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
 
     config["render"]["viewer_width"] = 2048
     config["render"]["viewer_height"] = 2048
+
+    config["env"]["use_external_obs"] = True
+    config["env"]["external_sensors"] = [
+        {
+            "sensor_type": "VisionSensor",
+            "name": "front_cam",
+            "relative_prim_path": "/front_cam",
+            "modalities": ["rgb", "depth"],
+            "sensor_kwargs": {
+                "image_height": 256,
+                "image_width": 256,
+                "focal_length": 17.0,
+            },
+            "position": [0.0, 2.0, 2.0],
+            "orientation": [0.7071, 0.0, 0.0, -0.7071],
+            "pose_frame": "parent",
+            "include_in_obs": True,
+        },
+        {
+            "sensor_type": "VisionSensor",
+            "name": "top_cam",
+            "relative_prim_path": "/top_cam",
+            # Avoid seg_semantic here: it requires a complete OG object dataset under gm.DATASET_PATH.
+            "modalities": ["rgb"],
+            "sensor_kwargs": {
+                "image_height": 256,
+                "image_width": 256,
+            },
+            "position": [0.0, 8.0, 0.0],
+            "orientation": [0.7071, -0.7071, 0.0, 0.0],
+            "pose_frame": "parent",
+            "include_in_obs": False,
+        },
+    ]
 
     env = og.Environment(configs=config)
     rearrangement_env = FastEnv(env)

@@ -11,8 +11,6 @@ log = create_module_logger(module_name=__name__)
 
 def recursively_generate_rearrange_dict(dic):
     """
-    
-
     Args:
         dic (dict or gym.spaces.Dict): (Potentially nested) dictionary to convert into a flattened dictionary
 

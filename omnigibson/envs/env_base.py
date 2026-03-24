@@ -76,7 +76,10 @@ class Environment(gym.Env, GymObservable, Recreatable):
         self._automatic_reset = self.env_config["automatic_reset"]
         self._flatten_action_space = self.env_config["flatten_action_space"]
         self._flatten_obs_space = self.env_config["flatten_obs_space"]
+        # control if rearrangment task
         self._rearrangement = self.env_config["rearrangement"]
+        # control if using external sensors
+        self._use_external_obs = self.env_config["use_external_obs"]
         self.device = self.env_config["device"] if self.env_config["device"] else "cpu"
         self._initial_pos_z_offset = self.env_config[
             "initial_pos_z_offset"
@@ -614,11 +617,18 @@ class Environment(gym.Env, GymObservable, Recreatable):
         if self._flatten_obs_space:
             obs = recursively_generate_flat_dict(dic=obs)
 
+        # Rearrangement task
         if self._rearrangement:
-            obs = recursively_generate_rearrange_dict(dic=obs)
-            rgb = obs["rgb"][:,:,:3]
-            layout = self._layout[:,:,:3]
-            obs = th.cat([rgb, layout], dim = 2).flatten()
+            if self._use_external_obs:
+                # use external sensors
+                obs = recursively_generate_flat_dict(dic=obs)
+            else:
+                # only use rgb + layout
+                robot = self.robots[0]
+                obs_robot = recursively_generate_rearrange_dict(dic=obs.get(robot.name, None))
+                rgb = obs_robot['rgb'][:, :, :3]  # [128, 128, 3]
+                layout = self._layout[:, :, :3]   # [128, 128, 3]
+                obs = th.cat([rgb, layout], dim = 2).flatten()  # [98304]
 
         return obs, info
 
@@ -944,6 +954,7 @@ class Environment(gym.Env, GymObservable, Recreatable):
                 "flatten_action_space": False,
                 "flatten_obs_space": False,
                 "initial_pos_z_offset": 0.1,
+                "use_external_obs": False,
                 "external_sensors": None,
             },
             # Rendering kwargs
