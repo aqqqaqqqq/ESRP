@@ -7,6 +7,6 @@ from omnigibson.reward_functions.reward_function_base import REGISTERED_REWARD_F
 from omnigibson.reward_functions.arrival_reward import ArrivalReward
 from omnigibson.reward_functions.robot_collision_reward import RobotCollisionReward
 from omnigibson.reward_functions.rearrange_potential_reward import RearrangePotentialReward
+from omnigibson.reward_functions.rearrange_reaching_reward import RearrangeReachingReward
 from omnigibson.reward_functions.grasping_reward import GraspingReward
 from omnigibson.reward_functions.living_reward import LivingReward
-

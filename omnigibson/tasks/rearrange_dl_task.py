@@ -22,6 +22,7 @@ from omnigibson.reward_functions.point_goal_reward import PointGoalReward
 from omnigibson.reward_functions.arrival_reward import ArrivalReward
 from omnigibson.reward_functions.rearrange_potential_reward import RearrangePotentialReward
 from omnigibson.reward_functions.grasping_reward import GraspingReward
+from omnigibson.reward_functions.rearrange_reaching_reward import RearrangeReachingReward
 from omnigibson.reward_functions.robot_collision_reward import RobotCollisionReward
 from omnigibson.reward_functions.living_reward import LivingReward
 
@@ -105,6 +106,7 @@ class RearrangeDlTask(BaseTask):
         )
         # rewards["collision"] = RobotCollisionReward(r_collision=self._reward_config["r_collision"])
         rewards["potential"] = RearrangePotentialReward(r_potential = self._reward_config["r_potential"])
+        rewards["reaching"] = RearrangeReachingReward(r_reaching=self._reward_config["r_reaching"])
         rewards["grasping"] = GraspingReward(r_grasping = self._reward_config["r_grasping"])
         rewards["living"] = LivingReward(r_living = self._reward_config["r_living"])
         return rewards
@@ -253,6 +255,37 @@ class RearrangeDlTask(BaseTask):
             return None
         return float(self.objects_current_potential[object_name]["pos"])
 
+    def get_robot_position(self, env):
+        robot_pos, _ = env.robots[self._robot_idn].get_position_orientation(frame="scene")
+        return robot_pos
+
+    def get_reaching_candidate_objects(self):
+        return [
+            object_name
+            for object_name in self.objects_to_rearrange
+            if object_name != self._fetch_name and not self.check_target(object_name)
+        ]
+
+    def get_reaching_target_info(self, env):
+        candidate_objects = self.get_reaching_candidate_objects()
+        if len(candidate_objects) == 0:
+            candidate_objects = list(self.objects_to_rearrange)
+        if len(candidate_objects) == 0:
+            return None, None
+
+        robot_pos = self.get_robot_position(env)
+        nearest_object = None
+        nearest_distance = None
+
+        for object_name in candidate_objects:
+            object_pos, _ = self.get_object_pos_ori(env, object_name)
+            distance = float(T.l2_distance(robot_pos, object_pos))
+            if nearest_distance is None or distance < nearest_distance:
+                nearest_distance = distance
+                nearest_object = object_name
+
+        return nearest_distance, nearest_object
+
     def _append_object_event(self, object_name, event):
         if object_name not in self._object_event_history:
             self._object_event_history[object_name] = []
@@ -307,13 +340,16 @@ class RearrangeDlTask(BaseTask):
         self._initial_quat = initial_quat
 
     def check_target(self, object_name):
-        if object_name is not None:
-            target = self.objects_target_polygon[object_name]
-            current = self.objects_current_polygon[object_name]
-            intersection_area = current.intersection(target).area
-            target_area = target.area
-            if intersection_area / target_area > self._tolerance:
-                return True
+        if object_name is None:
+            return False
+        if object_name not in self.objects_target_polygon or object_name not in self.objects_current_polygon:
+            return False
+        target = self.objects_target_polygon[object_name]
+        current = self.objects_current_polygon[object_name]
+        intersection_area = current.intersection(target).area
+        target_area = target.area
+        if intersection_area / target_area > self._tolerance:
+            return True
         return False
     
     def _step_termination(self, env, action, info=None):
@@ -420,6 +456,7 @@ class RearrangeDlTask(BaseTask):
             "r_pointgoal": 10,
             "first_arrival": 1.0,
             "r_potential": 0.5,
+            "r_reaching": 0.1,
             "r_grasping": 0.01,
             "r_living": 0.0
         }

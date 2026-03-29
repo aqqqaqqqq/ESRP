@@ -1,162 +1,307 @@
-import os
-import re
-from datetime import datetime
+import argparse
 import ast
-from tqdm import tqdm
-import json
-
-import numpy as np
-import matplotlib.pyplot as plt
-
-def exponential_moving_average(data, alpha=0.0005):
-    """
-    Compute the Exponential Moving Average (EMA) for a given data series.
-    
-    Parameters:
-    - data (list of float): The list of data points to smooth.
-    - alpha (float): The smoothing factor, between 0 and 1. Higher alpha gives more weight to recent data.
-    
-    Returns:
-    - ema (list of float): The smoothed data using EMA.
-    """
-    ema = []
-    current_ema = data[0]  # Start with the first data point
-    ema.append(current_ema)
-
-    for point in data[1:]:
-        current_ema = alpha * point + (1 - alpha) * current_ema
-        ema.append(current_ema)
-
-    return ema
-
-def visualize_grasping_objs_mean(entries, alpha=0.05):
-    """
-    Given a list of entries, calculate the mean of 'grasping_objs' for each entry,
-    apply exponential moving average (EMA) for smoothing, and plot the results.
-
-    Parameters:
-    - entries (list of dict): List of entries containing 'grasping_objs' and 'timestamp_str'
-    - alpha (float): Smoothing factor for EMA (default is 0.1)
-    
-    Returns:
-    - None: Generates a plot of smoothed mean values over time.
-    """
-    # Initialize lists for timestamps and mean values
-    timestamps = []
-    mean_values = []
-    
-    # Loop through each entry in the entries list
-    for entry in entries:
-        grasping_objs = entry.get('grasping_objs', [])
-        rewards = entry.get('rewards', [])
-        
-        if grasping_objs:  # Check if grasping_objs is not empty
-            mean_value = np.sum(rewards) - 0.01 * np.sum(grasping_objs) # Calculate mean of grasping_objs
-            timestamps.append(entry['timestamp_str'])
-            mean_values.append(mean_value)
-    
-    # Apply Exponential Moving Average (EMA) to smooth the mean values
-    smoothed_values = exponential_moving_average(mean_values, alpha)
-    
-    # Plotting the smoothed mean grasping objects over time
-    plt.figure(figsize=(10, 6))
-    plt.plot(timestamps, mean_values, marker='o', linestyle='-', color='b', label='Mean Grasping Objects', alpha=0.5)
-    plt.plot(timestamps, smoothed_values, marker='x', linestyle='-', color='r', label='Smoothed (EMA)')
-
-    # Formatting the plot
-    plt.xticks(rotation=45, ha='right')
-    plt.xlabel('Timestamp')
-    plt.ylabel('Mean of Grasping Objects')
-    plt.ylim([-0.5, 2])
-    plt.title('Mean of Grasping Objects Over Time (Smoothed with EMA)')
-    plt.grid(True)
-    plt.tight_layout()
-    plt.legend()
-    plt.show()
+import re
+from pathlib import Path
+from statistics import mean
 
 
-
-def extract_and_filter_logs(folder_path):
-    log_entries = []  # List to store valid log entries
-    zero_entries = []  # List to store entries with all zeros in grasping_objs
-    timestamp_counts = {}  # Dictionary to count duplicate timestamps
-    
-    # Define a pattern to detect the first line of a valid log entry
-    entry_start_pattern = re.compile(r"(\d+-\d+-\d+ \d+:\d+:\d+\.\d+)\s+\| INFO\s+\| __main__:main:+\d+ - (.*)$")
-
-    with open("/home/user/Desktop/rearrange/OmniGibson-Rearrange/test_all_data.txt", 'r') as f:
-        content = f.read()  # Entire file content as one string
-    
-    all_num = [0, 0, 0]
-    success_num = [0, 0, 0]
-    each_arrival = [[],[],[]]
-    each_potential = [[],[],[]]
-    steps = [0,0,0]
-    filename = "ppo_lstm_all_18000_0.3_3.log"
-    file_path = os.path.join(folder_path, filename)
-    with open(file_path, "r") as f:
-        for line in f:
-            match = entry_start_pattern.search(line)
-            if match:
-                # print(all_num)
-                time_step = match.group(1)
-                dict_str = match.group(2)
-                dict_str = dict_str.replace("'", '"')
-                dict_str = re.sub(r'tensor\(([\deE\+\-\.]+)\)', r'\1', dict_str)
-                dict_str = dict_str.replace("False", "false").replace("True", "true")
-                data = json.loads(dict_str)
-                if data["scene_name"] in content:
-                    if data["success"]:
-                        if data["obj_num"] < 2:
-                            success_num[0] += 1
-                            # print(data["scene_name"], data["obj_num"], data["arrival_num"])
-                            # steps[0] += data["step"]
-                        elif data["obj_num"] > 3:
-                            success_num[2] += 1
-                            # steps[2] += data["step"]
-                        else:
-                            success_num[1] += 1
-                            # steps[1] += data["step"]
-                    if data["obj_num"] < 2:
-                        all_num[0] += 1
-                        each_arrival[0].append(data["arrival_num"] / data['obj_num']) 
-                        each_potential[0].append(data["fini_potential"] / data["init_potential"])
-                    elif data["obj_num"] > 3:
-                        all_num[2] += 1
-                        each_arrival[2].append(data["arrival_num"] / data['obj_num']) 
-                        each_potential[2].append(data["fini_potential"] / data["init_potential"])
-                    else:
-                        all_num[1] += 1
-                        each_arrival[1].append(data["arrival_num"] / data['obj_num']) 
-                        each_potential[1].append(data["fini_potential"] / data["init_potential"])
-                    # each_arrival.append(data["arrival_num"] / data['obj_num']) 
-                    # each_potential.append(data["fini_potential"] / data["init_potential"])
-                    # all_num += 1
-    print(all_num)
-    # return success_num / all_num, sum(each_arrival)/all_num, sum(each_potential) / all_num
-    return success_num, all_num, each_arrival, each_potential, steps
+DEFAULT_LOG_PATH = "/home/user/Desktop/wq/try/more_metric.log"
 
 
-# Example usage:
-folder_path = "/home/user/Desktop/rearrange_logs"  # Your folder path
-success_num, all_num, each_arrival, each_potential, steps = extract_and_filter_logs(folder_path)
-print("1 object: ", "SR:", success_num[0]/all_num[0], "OSR:", sum(each_arrival[0])/all_num[0], "RDR:", sum(each_potential[0])/all_num[0])
-print("2-3 objects: ", "SR:", success_num[1]/all_num[1], "OSR:", sum(each_arrival[1])/all_num[1], "RDR:", sum(each_potential[1])/all_num[1],)
-print("4-6 objects: ", "SR:", success_num[2]/all_num[2], "OSR:", sum(each_arrival[2])/all_num[2], "RDR:", sum(each_potential[2])/all_num[2],)
-success_sum = sum(success_num)
-all_sum = sum(all_num)
-arrival_sum = sum(each_arrival[0]) + sum(each_arrival[1]) + sum(each_arrival[2])
-potential_sum = sum(each_potential[0]) + sum(each_potential[1]) + sum(each_potential[2])
-print("all: ", "SR:", success_sum/all_sum, "OSR:", arrival_sum/all_sum, "RDR:", potential_sum/all_sum)
+def safe_mean(values):
+    return mean(values) if values else 0.0
 
-"""
-random:
-1 object:  SR: 0.12394366197183099 OSR: 0.12112676056338029 RDR: 1.015212389832849
-2-3 objects:  SR: 0.005434782608695652 OSR: 0.012681159420289854 RDR: 1.059485552370269
-4-6 objects:  SR: 0.0 OSR: 0.0 RDR: 0.9928549161568647
 
-model:
-1 object:  SR: 0.2704225352112676 OSR: 0.2676056338028169 RDR: 0.91627281742207
-2-3 objects:  SR: 0.0 OSR: 0.002717391304347826 RDR: 1.060284398019572
-4-6 objects:  SR: 0.0 OSR: 0.0 RDR: 1.0425456902670551
-"""
+def parse_eval_log(log_path):
+    log_path = Path(log_path)
+    if not log_path.exists():
+        raise FileNotFoundError(f"Log file not found: {log_path}")
+
+    rows = []
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        if "{" not in line:
+            continue
+
+        raw_dict = line[line.index("{") :]
+        raw_dict = re.sub(r"tensor\(([^)]+)\)", r"\1", raw_dict)
+
+        try:
+            data = ast.literal_eval(raw_dict)
+        except Exception:
+            continue
+
+        rows.append(data)
+
+    return rows
+
+
+def summarize_overall(rows):
+    total = len(rows)
+    success_count = sum(1 for row in rows if row["success"])
+    timeout_count = sum(1 for row in rows if row["step"] >= 500)
+    no_grasp_count = sum(1 for row in rows if not row["grasp_events"])
+    late_first_grasp_count = sum(
+        1
+        for row in rows
+        if row["first_grasp_step"] is not None and row["first_grasp_step"] > 100
+    )
+    rows_with_release = [row for row in rows if row["release_events"]]
+    released_before_target_count = sum(
+        1 for row in rows_with_release if row["released_before_target"]
+    )
+
+    arrival_ratios = [
+        row["arrival_num"] / row["obj_num"] for row in rows if row["obj_num"] > 0
+    ]
+    potential_deltas = [
+        float(row["fini_potential"]) - float(row["init_potential"]) for row in rows
+    ]
+
+    return {
+        "episode_count": total,
+        "success_rate": success_count / total if total else 0.0,
+        "success_count": success_count,
+        "timeout_count": timeout_count,
+        "avg_step": safe_mean([row["step"] for row in rows]),
+        "avg_obj_num": safe_mean([row["obj_num"] for row in rows]),
+        "avg_arrival_ratio": safe_mean(arrival_ratios),
+        "avg_potential_delta": safe_mean(potential_deltas),
+        "no_grasp_count": no_grasp_count,
+        "no_grasp_ratio": no_grasp_count / total if total else 0.0,
+        "late_first_grasp_count": late_first_grasp_count,
+        "late_first_grasp_ratio": late_first_grasp_count / total if total else 0.0,
+        "episodes_with_release_count": len(rows_with_release),
+        "released_before_target_count": released_before_target_count,
+        "released_before_target_ratio": (
+            released_before_target_count / len(rows_with_release)
+            if rows_with_release
+            else 0.0
+        ),
+    }
+
+
+def summarize_by_success(rows):
+    result = {}
+    for success_flag in [True, False]:
+        subset = [row for row in rows if row["success"] == success_flag]
+        subset_with_release = [row for row in subset if row["release_events"]]
+        subset_with_grasp = [row for row in subset if row["grasp_events"]]
+        first_grasp_steps = [
+            row["first_grasp_step"]
+            for row in subset
+            if row["first_grasp_step"] is not None
+        ]
+        potential_deltas = [
+            float(row["fini_potential"]) - float(row["init_potential"]) for row in subset
+        ]
+        total = len(subset)
+        result[success_flag] = {
+            "count": total,
+            "avg_step": safe_mean([row["step"] for row in subset]),
+            "avg_first_grasp_step": safe_mean(first_grasp_steps),
+            "episodes_with_grasp_count": len(subset_with_grasp),
+            "avg_grasp_count_among_grasp_episodes": safe_mean(
+                [len(row["grasp_events"]) for row in subset_with_grasp]
+            ),
+            "no_grasp_ratio": (
+                sum(1 for row in subset if not row["grasp_events"]) / total if total else 0.0
+            ),
+            "episodes_with_release_count": len(subset_with_release),
+            "released_before_target_ratio": (
+                sum(1 for row in subset_with_release if row["released_before_target"])
+                / len(subset_with_release)
+                if subset_with_release
+                else 0.0
+            ),
+            "avg_potential_delta": safe_mean(potential_deltas),
+        }
+    return result
+
+
+def summarize_by_obj_num(rows):
+    result = {}
+    for obj_num in sorted({row["obj_num"] for row in rows}):
+        subset = [row for row in rows if row["obj_num"] == obj_num]
+        total = len(subset)
+        potential_deltas = [
+            float(row["fini_potential"]) - float(row["init_potential"]) for row in subset
+        ]
+        result[obj_num] = {
+            "count": total,
+            "success_rate": (
+                sum(1 for row in subset if row["success"]) / total if total else 0.0
+            ),
+            "avg_arrival_ratio": safe_mean(
+                [row["arrival_num"] / row["obj_num"] for row in subset if row["obj_num"] > 0]
+            ),
+            "no_grasp_ratio": (
+                sum(1 for row in subset if not row["grasp_events"]) / total if total else 0.0
+            ),
+            "avg_first_grasp_step": safe_mean(
+                [
+                    row["first_grasp_step"]
+                    for row in subset
+                    if row["first_grasp_step"] is not None
+                ]
+            ),
+            "avg_potential_delta": safe_mean(potential_deltas),
+        }
+    return result
+
+
+def summarize_release_events(rows):
+    release_events = []
+    for row in rows:
+        release_events.extend(row["release_events"])
+
+    total = len(release_events)
+    if total == 0:
+        return {
+            "total_releases": 0,
+            "release_on_target_ratio": 0.0,
+            "release_farther_ratio": 0.0,
+            "release_closer_ratio": 0.0,
+            "release_unchanged_ratio": 0.0,
+            "short_hold_ratio_le_5": 0.0,
+            "avg_hold_steps": 0.0,
+        }
+
+    hold_steps = [
+        event["steps_since_grasp"]
+        for event in release_events
+        if event["steps_since_grasp"] is not None
+    ]
+
+    return {
+        "total_releases": total,
+        "release_on_target_ratio": (
+            sum(1 for event in release_events if event["released_on_target"]) / total
+        ),
+        "release_farther_ratio": (
+            sum(1 for event in release_events if event["distance_change_vs_grasp"] == "farther")
+            / total
+        ),
+        "release_closer_ratio": (
+            sum(1 for event in release_events if event["distance_change_vs_grasp"] == "closer")
+            / total
+        ),
+        "release_unchanged_ratio": (
+            sum(1 for event in release_events if event["distance_change_vs_grasp"] == "unchanged")
+            / total
+        ),
+        "short_hold_ratio_le_5": (
+            sum(
+                1
+                for event in release_events
+                if event["steps_since_grasp"] is not None and event["steps_since_grasp"] <= 5
+            )
+            / total
+        ),
+        "avg_hold_steps": safe_mean(hold_steps),
+    }
+
+
+def print_section(title):
+    print(f"\n{title}")
+    print("-" * len(title))
+
+
+def print_overall(summary):
+    print_section("Overall")
+    print(f"episode_count: {summary['episode_count']}")
+    print(f"success_count: {summary['success_count']}")
+    print(f"success_rate: {summary['success_rate']:.4f}")
+    print(f"timeout_count: {summary['timeout_count']}")
+    print(f"avg_step: {summary['avg_step']:.2f}")
+    print(f"avg_obj_num: {summary['avg_obj_num']:.2f}")
+    print(f"avg_arrival_ratio: {summary['avg_arrival_ratio']:.4f}")
+    print(f"avg_potential_delta: {summary['avg_potential_delta']:.4f}")
+    print(
+        f"no_grasp: {summary['no_grasp_count']} ({summary['no_grasp_ratio']:.4f})"
+    )
+    print(
+        "late_first_grasp_gt_100: "
+        f"{summary['late_first_grasp_count']} ({summary['late_first_grasp_ratio']:.4f})"
+    )
+    print(
+        "episodes_with_release: "
+        f"{summary['episodes_with_release_count']}"
+    )
+    print(
+        "released_before_target_among_release_episodes: "
+        f"{summary['released_before_target_count']} ({summary['released_before_target_ratio']:.4f})"
+    )
+
+
+def print_by_success(summary):
+    print_section("By Success")
+    for success_flag in [True, False]:
+        group_name = "success=True" if success_flag else "success=False"
+        stats = summary[success_flag]
+        print(group_name)
+        print(f"  count: {stats['count']}")
+        print(f"  avg_step: {stats['avg_step']:.2f}")
+        print(f"  avg_first_grasp_step: {stats['avg_first_grasp_step']:.2f}")
+        print(f"  episodes_with_grasp: {stats['episodes_with_grasp_count']}")
+        print(
+            "  avg_grasp_count_among_grasp_episodes: "
+            f"{stats['avg_grasp_count_among_grasp_episodes']:.2f}"
+        )
+        print(f"  no_grasp_ratio: {stats['no_grasp_ratio']:.4f}")
+        print(f"  episodes_with_release: {stats['episodes_with_release_count']}")
+        print(
+            "  released_before_target_ratio_among_release_episodes: "
+            f"{stats['released_before_target_ratio']:.4f}"
+        )
+        print(f"  avg_potential_delta: {stats['avg_potential_delta']:.4f}")
+
+
+def print_by_obj_num(summary):
+    print_section("By Object Count")
+    for obj_num, stats in summary.items():
+        print(f"obj_num={obj_num}")
+        print(f"  count: {stats['count']}")
+        print(f"  success_rate: {stats['success_rate']:.4f}")
+        print(f"  avg_arrival_ratio: {stats['avg_arrival_ratio']:.4f}")
+        print(f"  no_grasp_ratio: {stats['no_grasp_ratio']:.4f}")
+        print(f"  avg_first_grasp_step: {stats['avg_first_grasp_step']:.2f}")
+        print(f"  avg_potential_delta: {stats['avg_potential_delta']:.4f}")
+
+
+def print_release_summary(summary):
+    print_section("Release Quality")
+    print(f"total_releases: {summary['total_releases']}")
+    print(f"release_on_target_ratio: {summary['release_on_target_ratio']:.4f}")
+    print(f"release_farther_ratio: {summary['release_farther_ratio']:.4f}")
+    print(f"release_closer_ratio: {summary['release_closer_ratio']:.4f}")
+    print(f"release_unchanged_ratio: {summary['release_unchanged_ratio']:.4f}")
+    print(f"short_hold_ratio_le_5: {summary['short_hold_ratio_le_5']:.4f}")
+    print(f"avg_hold_steps: {summary['avg_hold_steps']:.2f}")
+
+
+def analyze_log(log_path):
+    rows = parse_eval_log(log_path)
+    if not rows:
+        raise ValueError(f"No valid eval_dict entries found in: {log_path}")
+
+    print(f"log_path: {log_path}")
+    print_overall(summarize_overall(rows))
+    print_by_success(summarize_by_success(rows))
+    print_by_obj_num(summarize_by_obj_num(rows))
+    print_release_summary(summarize_release_events(rows))
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Analyze eval_model.py log metrics.")
+    parser.add_argument(
+        "--log-path",
+        type=str,
+        default=DEFAULT_LOG_PATH,
+        help="Path to the log file generated from eval_model.py",
+    )
+    args = parser.parse_args()
+    analyze_log(args.log_path)
+
+
+if __name__ == "__main__":
+    main()

@@ -70,7 +70,7 @@ CONTROL_MODES = dict(
 )
 
 MODEL_PATH = '/home/user/Desktop/saved_models/18000'
-NEW_LOG = '//home/user/Desktop/wuqi/try/more_metric.log'
+NEW_LOG = '//home/user/Desktop/wq/try/more_metric.log'
 SPLIT = [(0, 200)]
 
 THIS_SPLIT = 0

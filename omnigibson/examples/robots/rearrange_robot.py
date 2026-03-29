@@ -39,23 +39,7 @@ def save_img(t, file_path, file_name):
     im = Image.fromarray(t.numpy())
     im.save(file_path + '/' + file_name)
 
-def main(random_selection=False, headless=False, short_exec=False, quickstart=False):
-    """
-    Robot control demo with selection
-    Queries the user to select a robot, the controllers, a scene and a type of input (random actions or teleop)
-    """
-    # Choose scene to load
-
-    config_filename = config_filename = os.path.join(og.example_config_path, f"rearrange.yaml")
-    config = yaml.load(open(config_filename, "r"), Loader=yaml.FullLoader)
-    
-    scene_name = "50519e1e-1355-41f3-b092-6256d2ce205f_LivingRoom-6803"
-    config['env']['scene_names'] = [scene_name]
-
-    config["render"]["viewer_width"] = 2048
-    config["render"]["viewer_height"] = 2048
-
-    config["env"]["use_external_obs"] = True
+def add_external_sensors(config):
     config["env"]["external_sensors"] = [
         {
             "sensor_type": "VisionSensor",
@@ -88,6 +72,28 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
             "include_in_obs": False,
         },
     ]
+
+    return config
+
+def main(random_selection=False, headless=False, short_exec=False, quickstart=False):
+    """
+    Robot control demo with selection
+    Queries the user to select a robot, the controllers, a scene and a type of input (random actions or teleop)
+    """
+    # Choose scene to load
+
+    config_filename = config_filename = os.path.join(og.example_config_path, f"rearrange.yaml")
+    config = yaml.load(open(config_filename, "r"), Loader=yaml.FullLoader)
+    
+    scene_name = "0a8d471a-2587-458a-9214-586e003e9cf9_LivingDiningRoom-4017"
+    config['env']['scene_names'] = [scene_name]
+
+    config["render"]["viewer_width"] = 2048
+    config["render"]["viewer_height"] = 2048
+
+    # config["env"]["use_external_obs"] = True
+    if config["env"]["use_external_obs"]:
+        config = add_external_sensors(config)
 
     env = og.Environment(configs=config)
     rearrangement_env = FastEnv(env)
@@ -153,17 +159,17 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
             save_img(img, file_path, file_name)
 
         action = int(input("请输入动作编号 (0-5): "))
+        if action is None:
+            continue
         # 执行动作
         obs, reward, terminated, truncated, info = rearrangement_env.step(action)
-        pointgoal_rewards = info['reward']['reward_breakdown']['pointgoal']
+        potential_rewards = info['reward']['reward_breakdown']['potential']
         # rgb_obs = obs[:-1].resize(2048,2048,6)[:,:,:3]
         # from PIL import Image
         # im = Image.fromarray(rgb_obs.numpy())
-        # arrival_rewards = info['reward']['reward_breakdown']['arrival']
-        # potential_rewards = info['reward']['reward_breakdown']['potential']
-        # grasping_rewards = info['reward']['reward_breakdown']['grasping']
-        # living_rewards = info['reward']['reward_breakdown']['living']
-        # print(pointgoal_rewards)
+        reaching_rewards = info['reward']['reward_breakdown']['reaching']
+        print(reaching_rewards, potential_rewards)
+        print(info['reward']['reaching'])
         # import pdb; pdb.set_trace()
         step += 1
 
