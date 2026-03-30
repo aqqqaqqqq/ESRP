@@ -158,18 +158,22 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
             file_name = str(step) + ".png"
             save_img(img, file_path, file_name)
 
-        action = int(input("请输入动作编号 (0-5): "))
-        if action is None:
+        try:
+            action = int(input("请输入动作编号 (0-5): "))
+        except ValueError:
+            continue
+        if action not in [0,1,2,3,4,5]:
             continue
         # 执行动作
         obs, reward, terminated, truncated, info = rearrangement_env.step(action)
-        potential_rewards = info['reward']['reward_breakdown']['potential']
+
         # rgb_obs = obs[:-1].resize(2048,2048,6)[:,:,:3]
         # from PIL import Image
         # im = Image.fromarray(rgb_obs.numpy())
-        reaching_rewards = info['reward']['reward_breakdown']['reaching']
-        print(reaching_rewards, potential_rewards)
-        print(info['reward']['reaching'])
+        arrival_rewards = info['reward']['reward_breakdown']['arrival']
+        grasping_rewards = info['reward']['reward_breakdown']['grasping']
+        releasing_rewards = info['reward']['reward_breakdown']['releasing']
+        print(grasping_rewards, releasing_rewards, arrival_rewards)
         # import pdb; pdb.set_trace()
         step += 1
 

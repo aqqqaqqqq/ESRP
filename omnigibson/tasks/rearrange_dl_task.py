@@ -23,6 +23,7 @@ from omnigibson.reward_functions.arrival_reward import ArrivalReward
 from omnigibson.reward_functions.rearrange_potential_reward import RearrangePotentialReward
 from omnigibson.reward_functions.grasping_reward import GraspingReward
 from omnigibson.reward_functions.rearrange_reaching_reward import RearrangeReachingReward
+from omnigibson.reward_functions.releasing_reward import ReleasingReward
 from omnigibson.reward_functions.robot_collision_reward import RobotCollisionReward
 from omnigibson.reward_functions.living_reward import LivingReward
 
@@ -107,7 +108,14 @@ class RearrangeDlTask(BaseTask):
         # rewards["collision"] = RobotCollisionReward(r_collision=self._reward_config["r_collision"])
         rewards["potential"] = RearrangePotentialReward(r_potential = self._reward_config["r_potential"])
         rewards["reaching"] = RearrangeReachingReward(r_reaching=self._reward_config["r_reaching"])
-        rewards["grasping"] = GraspingReward(r_grasping = self._reward_config["r_grasping"])
+        rewards["grasping"] = GraspingReward(
+            r_grasping=self._reward_config["r_grasping"],
+            grasp_reward_decay=0.5, max_grasp_reward_count=4
+        )
+        rewards["releasing"] = ReleasingReward(
+            r_releasing=self._reward_config["r_releasing"],
+            release_distance_thresh=0.5
+        )
         rewards["living"] = LivingReward(r_living = self._reward_config["r_living"])
         return rewards
 
@@ -458,5 +466,6 @@ class RearrangeDlTask(BaseTask):
             "r_potential": 0.5,
             "r_reaching": 0.1,
             "r_grasping": 0.01,
+            "r_releasing": 0.01,
             "r_living": 0.0
         }
