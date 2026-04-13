@@ -86,8 +86,8 @@ def log_episode_info(episode, **kwargs):
 
 if __name__ == "__main__":
     # --- 手动设置 resume 路径（None 表示不恢复） ---
-    resume_learner_group = "/home/user/Desktop/saved_learner_group/1580"
-    # resume_learner_group = None  # 若不想恢复则设为 None
+    # resume_learner_group = "/home/user/Desktop/wq/try/first/saved_learner_group/3300"
+    resume_learner_group = None  # 若不想恢复则设为 None
     # ------------------------------------------------
 
     args = parser.parse_args()
@@ -115,7 +115,7 @@ if __name__ == "__main__":
             grad_clip_by="global_norm",
             vf_loss_coeff=0.1,
         )
-        .env_runners(sample_timeout_s=6000.0, num_gpus_per_env_runner=0.33, num_env_runners=6, create_env_on_local_worker=True)
+        .env_runners(sample_timeout_s=6000.0, num_gpus_per_env_runner=0.33, num_env_runners=3, create_env_on_local_worker=False)
         .learners(num_gpus_per_learner=0.5)
         .rl_module(
             rl_module_spec=RLModuleSpec(
@@ -151,8 +151,8 @@ if __name__ == "__main__":
 
         NUM_UPDATES_PER_SAVING = 20
         if step % NUM_UPDATES_PER_SAVING == 0:
-            module.save_to_path(os.path.join('/home/user/Desktop/saved_models/', str(step)))
-            learner_group.save_to_path(os.path.join('/home/user/Desktop/saved_learner_group/', str(step)))
+            module.save_to_path(os.path.join('/home/user/Desktop/wq/try/third/saved_models/', str(step)))
+            learner_group.save_to_path(os.path.join('/home/user/Desktop/wq/try/third/saved_learner_group/', str(step)))
 
         step += 1
 

@@ -114,7 +114,7 @@ class RearrangeDlTask(BaseTask):
         )
         rewards["releasing"] = ReleasingReward(
             r_releasing=self._reward_config["r_releasing"],
-            release_distance_thresh=0.5
+            release_distance_thresh=0.1
         )
         rewards["living"] = LivingReward(r_living = self._reward_config["r_living"])
         return rewards
@@ -263,9 +263,9 @@ class RearrangeDlTask(BaseTask):
             return None
         return float(self.objects_current_potential[object_name]["pos"])
 
-    def get_robot_position(self, env):
-        robot_pos, _ = env.robots[self._robot_idn].get_position_orientation(frame="scene")
-        return robot_pos
+    def get_robot_position_orientation(self, env):
+        robot_pos, robot_ori = env.robots[self._robot_idn].get_position_orientation(frame="scene")
+        return robot_pos, robot_ori
 
     def get_reaching_candidate_objects(self):
         return [
@@ -281,7 +281,7 @@ class RearrangeDlTask(BaseTask):
         if len(candidate_objects) == 0:
             return None, None
 
-        robot_pos = self.get_robot_position(env)
+        robot_pos, _ = self.get_robot_position_orientation(env)
         nearest_object = None
         nearest_distance = None
 
@@ -465,7 +465,7 @@ class RearrangeDlTask(BaseTask):
             "first_arrival": 1.0,
             "r_potential": 0.5,
             "r_reaching": 0.1,
-            "r_grasping": 0.01,
-            "r_releasing": 0.01,
-            "r_living": 0.0
+            "r_grasping": 0.1,
+            "r_releasing": 0.05,
+            "r_living": 0.001
         }

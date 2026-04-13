@@ -1,4 +1,4 @@
-from gymnasium.spaces import Box
+from gymnasium.spaces import Box, Dict as SpaceDict
 import yaml
 import os
 import torch as th
@@ -396,11 +396,37 @@ class FastEnv(gym.Env):
         self.enable_collision_detection = True
         self.obstacles_cache = {}
 
-        self.observation_space = self.env.observation_space
+        self.observation_space = self._build_observation_space(self.env.observation_space)
         self.action_space = self.env.action_space
     
     def _get_robot(self):
         return self.env.robots[0]
+
+    def _build_observation_space(self, base_space):
+        grasping_space = Box(low=0, high=1, shape=(1,), dtype=np.uint8)
+        if isinstance(base_space, SpaceDict):
+            obs_spaces = dict(base_space.spaces)
+            obs_spaces["grasping_flag"] = grasping_space
+            return SpaceDict(obs_spaces)
+        if isinstance(base_space, Box):
+            low = np.concatenate([base_space.low.reshape(-1), np.array([0], dtype=base_space.dtype)])
+            high = np.concatenate([base_space.high.reshape(-1), np.array([1], dtype=base_space.dtype)])
+            return Box(low=low, high=high, dtype=base_space.dtype)
+        return base_space
+
+    def _append_grasping_flag(self, obs):
+        grasping_value = 1 if self.grasping_obj is not None else 0
+
+        if isinstance(obs, (dict, OrderedDict)):
+            wrapped_obs = dict(obs)
+            wrapped_obs["grasping_flag"] = th.tensor([grasping_value], dtype=th.uint8)
+            return wrapped_obs
+
+        if not isinstance(obs, th.Tensor):
+            obs = th.as_tensor(obs)
+
+        number = th.tensor([grasping_value], dtype=obs.dtype, device=obs.device)
+        return th.cat([obs, number])
 
     def _keep_relative_to_robot(pos, quat, old_robot_pos, old_robot_quat, new_robot_pos, new_robot_quat):
         pos_in_robot_frame, quat_in_robot_frame = T.relative_pose_transform(pos, quat, old_robot_pos, old_robot_quat)
@@ -580,12 +606,7 @@ class FastEnv(gym.Env):
 
         observations, rewards, terminates, truncates, infos = no_physical_step(self.env, no_op_action, n_render_iterations=10)
 
-        if self.grasping_obj is not None:
-            number = th.tensor(1, dtype=observations.dtype)
-            observations = th.cat([observations, number.unsqueeze(0)])
-        else:
-            number = th.tensor(0, dtype=observations.dtype)
-            observations = th.cat([observations, number.unsqueeze(0)])        
+        observations = self._append_grasping_flag(observations)
 
         a4 = time.perf_counter()
         # print(a2 - a1, a3 - a2, a4 - a3)
@@ -599,8 +620,7 @@ class FastEnv(gym.Env):
         self.obstacles_cache = {}
         obs, info = self.env.reset()
         self.grasping_obj = None
-        init_grasping_obj = th.tensor(0, dtype=obs.dtype).unsqueeze(0)
-        obs = th.cat([obs, init_grasping_obj])
+        obs = self._append_grasping_flag(obs)
         return obs, info
 
 class FakeEnv(gym.Env):
@@ -624,7 +644,7 @@ def make_env(cfg):
     gm.ENABLE_TRANSITION_RULES = False
     gm.ENABLE_FLATCACHE = False
     gm.RENDER_VIEWER_CAMERA = False
-    gm.USE_GPU_DYNMAICS = True
+    gm.USE_GPU_DYNAMICS = True
 
     threed_front_path = gm.ThreeD_FRONT_DATASET_PATH
     scene_path = os.path.join(threed_front_path, "scenes", "8148b1a7-7c15-4b53-9be3-8b5a617ba9d2_Bedroom-29109")

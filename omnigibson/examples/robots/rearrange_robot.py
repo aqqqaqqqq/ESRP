@@ -39,37 +39,74 @@ def save_img(t, file_path, file_name):
     im = Image.fromarray(t.numpy())
     im.save(file_path + '/' + file_name)
 
+def _sanitize_obs_key(key):
+    return key.replace("::", "__").replace("/", "_").replace(":", "_")
+
+def _to_numpy(value):
+    if isinstance(value, th.Tensor):
+        value = value.detach().cpu().numpy()
+    return value
+
+def _save_rgb_image(value, output_path):
+    image = _to_numpy(value)
+    if image.dtype != np.uint8:
+        image = np.clip(image, 0, 255).astype(np.uint8)
+    Image.fromarray(image[..., :3]).save(output_path)
+
+def _save_depth_image(value, output_path):
+    depth = _to_numpy(value).astype(np.float32)
+    valid = np.isfinite(depth)
+    if valid.any():
+        min_depth = depth[valid].min()
+        max_depth = depth[valid].max()
+        if max_depth > min_depth:
+            depth = (depth - min_depth) / (max_depth - min_depth)
+        else:
+            depth = np.zeros_like(depth)
+        depth[~valid] = 0.0
+    else:
+        depth = np.zeros_like(depth)
+
+    Image.fromarray((depth * 255).astype(np.uint8)).save(output_path)
+
+def save_flattened_obs_images(obs, output_dir, step):
+    if not isinstance(obs, dict):
+        return
+
+    os.makedirs(output_dir, exist_ok=True)
+    for key, value in obs.items():
+        if key == "grasping_flag":
+            continue
+
+        array = _to_numpy(value)
+        if not isinstance(array, np.ndarray) or array.ndim < 2:
+            continue
+
+        file_stem = f"{step:06d}_{_sanitize_obs_key(key)}"
+        output_path = os.path.join(output_dir, f"{file_stem}.png")
+
+        if key.endswith("::rgb") and array.ndim == 3:
+            _save_rgb_image(array, output_path)
+        elif key.endswith("::depth") and array.ndim == 2:
+            _save_depth_image(array, output_path)
+        elif key.endswith("::depth_linear") and array.ndim == 2:
+            _save_depth_image(array, output_path)
+
 def add_external_sensors(config):
     config["env"]["external_sensors"] = [
         {
             "sensor_type": "VisionSensor",
-            "name": "front_cam",
-            "relative_prim_path": "/front_cam",
-            "modalities": ["rgb", "depth"],
-            "sensor_kwargs": {
-                "image_height": 256,
-                "image_width": 256,
-                "focal_length": 17.0,
-            },
-            "position": [0.0, 2.0, 2.0],
-            "orientation": [0.7071, 0.0, 0.0, -0.7071],
-            "pose_frame": "parent",
-            "include_in_obs": True,
-        },
-        {
-            "sensor_type": "VisionSensor",
             "name": "top_cam",
             "relative_prim_path": "/top_cam",
-            # Avoid seg_semantic here: it requires a complete OG object dataset under gm.DATASET_PATH.
-            "modalities": ["rgb"],
+            "modalities": ["rgb", "depth"],
             "sensor_kwargs": {
-                "image_height": 256,
-                "image_width": 256,
+                "image_height": 2048,
+                "image_width": 2048,
+                "focal_length": 15.0,
             },
             "position": [0.0, 8.0, 0.0],
-            "orientation": [0.7071, -0.7071, 0.0, 0.0],
-            "pose_frame": "parent",
-            "include_in_obs": False,
+            "orientation": [-0.5, -0.5, -0.5, 0.5],
+            "pose_frame": "scene",
         },
     ]
 
@@ -81,7 +118,7 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
     Queries the user to select a robot, the controllers, a scene and a type of input (random actions or teleop)
     """
     # Choose scene to load
-
+    gm.ENABLE_FLATCACHE = True
     config_filename = config_filename = os.path.join(og.example_config_path, f"rearrange.yaml")
     config = yaml.load(open(config_filename, "r"), Loader=yaml.FullLoader)
     
@@ -91,7 +128,7 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
     config["render"]["viewer_width"] = 2048
     config["render"]["viewer_height"] = 2048
 
-    # config["env"]["use_external_obs"] = True
+    config["env"]["use_external_obs"] = True
     if config["env"]["use_external_obs"]:
         config = add_external_sensors(config)
 
@@ -128,13 +165,11 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
     z = polygon.centroid.y
     y = 400.0
 
-    cam = og.sim.viewer_camera
-    cam.focal_length = 1000.0
-    # y = compute_camera_height(np.array(floor_poly), cam.focal_length, cam.camera_parameters["cameraAperture"][0], cam.camera_parameters["cameraAperture"][1])
+    cam = env.external_sensors["top_cam"]
     y = compute_camera_height_from_polygon(cam, np.array(floor_poly))
-    top_down_position = th.tensor([x + 20, y, z])
+    top_down_position = th.tensor([x, y, z])
     top_down_orientation = th.tensor([-0.5, -0.5, -0.5, 0.5])
-    cam.set_position_orientation(top_down_position, top_down_orientation)
+    cam.set_position_orientation(top_down_position, top_down_orientation, frame="scene")
 
     for i in range(10):
         og.sim.render()
@@ -148,16 +183,10 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
     step = 0
     action_empty = th.zeros(13)
     grasping_obj = None
-    TAKE_PICTURE = False
+    TAKE_PICTURE = True
+    obs_output_dir = "/home/user/Desktop/wq/pictures"
 
     while step != max_steps:
-        if TAKE_PICTURE:
-            img = capture_top_down_image(cam)
-            result_path = " To Do "
-            file_path = os.path.join(result_path, scene_name)
-            file_name = str(step) + ".png"
-            save_img(img, file_path, file_name)
-
         try:
             action = int(input("请输入动作编号 (0-5): "))
         except ValueError:
@@ -167,13 +196,16 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
         # 执行动作
         obs, reward, terminated, truncated, info = rearrangement_env.step(action)
 
+        if TAKE_PICTURE:
+            save_flattened_obs_images(obs, obs_output_dir, step)
+
         # rgb_obs = obs[:-1].resize(2048,2048,6)[:,:,:3]
         # from PIL import Image
         # im = Image.fromarray(rgb_obs.numpy())
-        arrival_rewards = info['reward']['reward_breakdown']['arrival']
-        grasping_rewards = info['reward']['reward_breakdown']['grasping']
-        releasing_rewards = info['reward']['reward_breakdown']['releasing']
-        print(grasping_rewards, releasing_rewards, arrival_rewards)
+        reaching_rewards = info['reward']['reward_breakdown']['reaching']
+        potential_rewards = info['reward']['reward_breakdown']['potential']
+        # releasing_rewards = info['reward']['reward_breakdown']['releasing']
+        print(reaching_rewards, potential_rewards)
         # import pdb; pdb.set_trace()
         step += 1
 

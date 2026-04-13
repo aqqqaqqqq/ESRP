@@ -69,14 +69,14 @@ CONTROL_MODES = dict(
     teleop="Use keyboard control",
 )
 
-MODEL_PATH = '/home/user/Desktop/saved_models/18000'
-NEW_LOG = '//home/user/Desktop/wq/try/more_metric.log'
+MODEL_PATH = '/home/user/Desktop/wq/try/second/saved_models/4000'
+NEW_LOG = '/home/user/Desktop/wq/try/second/more_metric.log'
 SPLIT = [(0, 200)]
 
 THIS_SPLIT = 0
 
 def main(random_selection=False, headless=False, short_exec=False, quickstart=False):
-    spec = RLModuleSpec(LSTMContainingRLModule, observation_space=Box(low=0, high=255, shape=(98306,), dtype=np.uint8), action_space = gym.spaces.Discrete(6))
+    spec = RLModuleSpec(LSTMContainingRLModule, observation_space=Box(low=0, high=255, shape=(98305,), dtype=np.uint8), action_space = gym.spaces.Discrete(6))
     rl_module = spec.build()
     rl_module.restore_from_path(path = MODEL_PATH)
 
@@ -147,7 +147,7 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
             # sample from action dist
             probabilities = inference_result[Columns.ACTION_DIST_INPUTS]
             action = torch.multinomial(torch.softmax(probabilities.view(-1), 0), 1)
-            # print(probabilities, action)
+            print(probabilities, action)
             obs, reward, terminated, truncated, info = rearrangement_env.step(int(action))
             _init = {Columns.OBS: obs.unsqueeze(0).unsqueeze(0),
                         Columns.STATE_IN: inference_result[Columns.STATE_OUT]}

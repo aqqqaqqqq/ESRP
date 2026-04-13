@@ -33,7 +33,7 @@ scene:
 
 robots:
   - type: Test
-    obs_modalities: [rgb]
+    obs_modalities: [rgb, depth, depth_linear]
     action_normalize: true
     action_type: continuous
     grasping_mode: sticky

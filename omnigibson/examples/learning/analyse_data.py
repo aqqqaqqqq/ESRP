@@ -5,7 +5,7 @@ from pathlib import Path
 from statistics import mean
 
 
-DEFAULT_LOG_PATH = "/home/user/Desktop/wq/try/more_metric.log"
+DEFAULT_LOG_PATH = "/home/user/Desktop/wq/try/first/more_metric.log"
 
 
 def safe_mean(values):
