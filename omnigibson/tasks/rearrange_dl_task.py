@@ -267,6 +267,16 @@ class RearrangeDlTask(BaseTask):
         robot_pos, robot_ori = env.robots[self._robot_idn].get_position_orientation(frame="scene")
         return robot_pos, robot_ori
 
+    def get_robot_rearrange_object_distances(self, env):
+        robot_pos, _ = self.get_robot_position_orientation(env)
+        distances = {}
+
+        for object_name in self.objects_to_rearrange:
+            object_pos, _ = self.get_object_pos_ori(env, object_name)
+            distances[object_name] = float(T.l2_distance(robot_pos, object_pos))
+
+        return distances
+
     def get_reaching_candidate_objects(self):
         return [
             object_name
@@ -467,5 +477,5 @@ class RearrangeDlTask(BaseTask):
             "r_reaching": 0.1,
             "r_grasping": 0.1,
             "r_releasing": 0.05,
-            "r_living": 0.001
+            "r_living": 0
         }

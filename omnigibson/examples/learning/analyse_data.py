@@ -201,6 +201,53 @@ def summarize_release_events(rows):
     }
 
 
+def summarize_scene_categories(rows):
+    total = len(rows)
+    categories = {
+        "no_navigation_count": 0,
+        "near_but_no_grasp_count": 0,
+        "grasped_but_not_success_count": 0,
+        "grasped_and_success_count": 0,
+    }
+
+    for row in rows:
+        success = row["success"]
+        has_grasp_history = bool(row["grasp_events"])
+        min_distances = list(row.get("min_distance_per_object", {}).values())
+        min_distance = min(min_distances) if min_distances else None
+
+        if success is True:
+            categories["grasped_and_success_count"] += 1
+        elif success is False and has_grasp_history:
+            categories["grasped_but_not_success_count"] += 1
+        elif success is False and min_distance is not None and min_distance < 1.5:
+            categories["near_but_no_grasp_count"] += 1
+        elif success is False and min_distance is not None and min_distance > 1.5:
+            categories["no_navigation_count"] += 1
+
+    categories["no_navigation_ratio"] = (
+        categories["no_navigation_count"] / total if total else 0.0
+    )
+    categories["near_but_no_grasp_ratio"] = (
+        categories["near_but_no_grasp_count"] / total if total else 0.0
+    )
+    categories["grasped_but_not_success_ratio"] = (
+        categories["grasped_but_not_success_count"] / total if total else 0.0
+    )
+    categories["grasped_and_success_ratio"] = (
+        categories["grasped_and_success_count"] / total if total else 0.0
+    )
+    categories["categorized_count"] = (
+        categories["no_navigation_count"]
+        + categories["near_but_no_grasp_count"]
+        + categories["grasped_but_not_success_count"]
+        + categories["grasped_and_success_count"]
+    )
+    categories["uncategorized_count"] = total - categories["categorized_count"]
+
+    return categories
+
+
 def print_section(title):
     print(f"\n{title}")
     print("-" * len(title))
@@ -279,6 +326,28 @@ def print_release_summary(summary):
     print(f"avg_hold_steps: {summary['avg_hold_steps']:.2f}")
 
 
+def print_scene_categories(summary):
+    print_section("Scene Categories")
+    print(
+        "no_navigation_success_false_min_distance_gt_1_5: "
+        f"{summary['no_navigation_count']} ({summary['no_navigation_ratio']:.4f})"
+    )
+    print(
+        "near_object_no_grasp_success_false_min_distance_lt_1_5: "
+        f"{summary['near_but_no_grasp_count']} ({summary['near_but_no_grasp_ratio']:.4f})"
+    )
+    print(
+        "grasped_but_not_success: "
+        f"{summary['grasped_but_not_success_count']} ({summary['grasped_but_not_success_ratio']:.4f})"
+    )
+    print(
+        "grasped_and_success: "
+        f"{summary['grasped_and_success_count']} ({summary['grasped_and_success_ratio']:.4f})"
+    )
+    print(f"categorized_count: {summary['categorized_count']}")
+    print(f"uncategorized_count: {summary['uncategorized_count']}")
+
+
 def analyze_log(log_path):
     rows = parse_eval_log(log_path)
     if not rows:
@@ -289,6 +358,7 @@ def analyze_log(log_path):
     print_by_success(summarize_by_success(rows))
     print_by_obj_num(summarize_by_obj_num(rows))
     print_release_summary(summarize_release_events(rows))
+    print_scene_categories(summarize_scene_categories(rows))
 
 
 def main():

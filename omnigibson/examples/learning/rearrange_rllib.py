@@ -86,8 +86,8 @@ def log_episode_info(episode, **kwargs):
 
 if __name__ == "__main__":
     # --- 手动设置 resume 路径（None 表示不恢复） ---
-    # resume_learner_group = "/home/user/Desktop/wq/try/first/saved_learner_group/3300"
-    resume_learner_group = None  # 若不想恢复则设为 None
+    resume_learner_group = "/home/user/Desktop/wq/try/third/saved_learner_group/1340"
+    # resume_learner_group = None  # 若不想恢复则设为 None
     # ------------------------------------------------
 
     args = parser.parse_args()
@@ -141,7 +141,8 @@ if __name__ == "__main__":
     wandb.init(
         project="rearrange",
         name=run_id,
-        mode='offline'
+        mode='offline',
+        dir="/home/user/Desktop/"
     )
 
     while True:
