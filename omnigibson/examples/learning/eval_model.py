@@ -24,11 +24,11 @@ gm.ENABLE_TRANSITION_RULES = True
 gm.ENABLE_FLATCACHE = True
 gm.RENDER_VIEWER_CAMERA = True
 
-MODEL_PATH = "/home/user/Desktop/wq/try/first/saved_models/4500"
-NEW_LOG = "/home/user/Desktop/wq/pictures/first/more_metric.log"
+MODEL_PATH = "/home/user/Desktop/wq/try/second/saved_models/4500"
+NEW_LOG = "/home/user/Desktop/wq/pictures/second/more_metric.log"
 # SCENE_LIST_PATH = "/home/user/Desktop/rl/omnigibson/data/test_all_data.txt"
-SCENE_LIST_PATH = "/home/user/Desktop/wq/pictures/first/visualize_scene.txt"
-result_path = "/home/user/Desktop/wq/pictures/first"
+SCENE_LIST_PATH = "/home/user/Desktop/wq/pictures/second/visualize_scene.txt"
+result_path = "/home/user/Desktop/wq/pictures/second"
 OBSERVATION_SPACE = Box(low=0, high=255, shape=(98305,), dtype=np.uint8)
 ACTION_SPACE = gym.spaces.Discrete(6)
 
@@ -106,12 +106,6 @@ def main():
         min_distance_step_per_object = {}
 
         while True:
-            if TAKE_PICTURE:
-                img = capture_top_down_image(cam)
-                file_path = os.path.join(result_path, scene_name)
-                file_name = str(scene_step) + ".png"
-                save_img(img, file_path, file_name)
-
             inference_result = rl_module.forward_inference(module_input)
             probabilities = inference_result[Columns.ACTION_DIST_INPUTS]
             action = torch.multinomial(torch.softmax(probabilities.view(-1), 0), 1)
@@ -129,6 +123,12 @@ def main():
                     min_distance_per_object[object_name] = distance
                     min_distance_step_per_object[object_name] = scene_step
             infos.append(info)
+
+            if TAKE_PICTURE:
+                img = capture_top_down_image(cam)
+                file_path = os.path.join(result_path, scene_name)
+                file_name = str(scene_step) + ".png"
+                save_img(img, file_path, file_name)
 
             if terminated:
                 success = True

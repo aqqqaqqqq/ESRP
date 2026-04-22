@@ -214,6 +214,15 @@ class Environment(gym.Env, GymObservable, Recreatable):
                 # Save the state for objects from load_robots / load_objects / load_task
                 _env.update_initial_state()
             og.sim.stop()
+
+        # External sensors own standalone camera prims / viewports, so we need to explicitly
+        # destroy them before clearing the scene. Otherwise the next scene may inherit stale
+        # viewport bindings to deleted camera prims.
+        if self._external_sensors is not None:
+            for sensor in list(self._external_sensors.values()):
+                sensor.remove()
+            self._external_sensors = None
+            self._external_sensors_include_in_obs = None
         
         self.scene.clear()
 
