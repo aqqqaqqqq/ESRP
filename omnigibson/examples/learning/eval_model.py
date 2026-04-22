@@ -14,15 +14,21 @@ from omnigibson.examples.environments.new_env import FastEnv
 from omnigibson.macros import gm
 from omnigibson.utils.model_utils import LSTMContainingRLModule
 
+from shapely.geometry import Polygon as pol
+from omnigibson.examples.environments.get_camera_picture import compute_camera_height_from_polygon, capture_top_down_image
+from omnigibson.examples.robots.rearrange_robot import add_external_sensors, save_img
+
 
 gm.ENABLE_OBJECT_STATES = True
 gm.ENABLE_TRANSITION_RULES = True
 gm.ENABLE_FLATCACHE = True
 gm.RENDER_VIEWER_CAMERA = True
 
-MODEL_PATH = "/home/user/Desktop/saved_models/4500"
-NEW_LOG = "/home/user/Desktop/wq/try/old/no_grasp_metric_4500.log"
-SCENE_LIST_PATH = "/home/user/Desktop/wq/try/old/no_grasp_scenes_4500.txt"
+MODEL_PATH = "/home/user/Desktop/wq/try/first/saved_models/4500"
+NEW_LOG = "/home/user/Desktop/wq/pictures/first/more_metric.log"
+# SCENE_LIST_PATH = "/home/user/Desktop/rl/omnigibson/data/test_all_data.txt"
+SCENE_LIST_PATH = "/home/user/Desktop/wq/pictures/first/visualize_scene.txt"
+result_path = "/home/user/Desktop/wq/pictures/first"
 OBSERVATION_SPACE = Box(low=0, high=255, shape=(98305,), dtype=np.uint8)
 ACTION_SPACE = gym.spaces.Discrete(6)
 
@@ -59,6 +65,10 @@ def main():
     print(config["env"]["scene_names"])
     print("len:", len(config["env"]["scene_names"]))
 
+    TAKE_PICTURE = True
+    if TAKE_PICTURE:
+        config = add_external_sensors(config)
+
     env = og.Environment(configs=config)
     rearrangement_env = FastEnv(env)
 
@@ -76,6 +86,18 @@ def main():
             Columns.OBS: obs.unsqueeze(0).unsqueeze(0),
         }
 
+        if TAKE_PICTURE:
+            floor_poly = rearrangement_env.env.task.get_floor_poly(rearrangement_env.env)
+            polygon = pol(floor_poly)
+            x = polygon.centroid.x
+            z = polygon.centroid.y
+
+            cam = rearrangement_env.env.external_sensors["top_cam"]
+            y = compute_camera_height_from_polygon(cam, np.array(floor_poly))
+            top_down_position = torch.tensor([x, y, z])
+            top_down_orientation = torch.tensor([-0.5, -0.5, -0.5, 0.5])
+            cam.set_position_orientation(top_down_position, top_down_orientation, frame="scene")
+
         infos = []
         scene_step = 0
         success = False
@@ -84,6 +106,12 @@ def main():
         min_distance_step_per_object = {}
 
         while True:
+            if TAKE_PICTURE:
+                img = capture_top_down_image(cam)
+                file_path = os.path.join(result_path, scene_name)
+                file_name = str(scene_step) + ".png"
+                save_img(img, file_path, file_name)
+
             inference_result = rl_module.forward_inference(module_input)
             probabilities = inference_result[Columns.ACTION_DIST_INPUTS]
             action = torch.multinomial(torch.softmax(probabilities.view(-1), 0), 1)

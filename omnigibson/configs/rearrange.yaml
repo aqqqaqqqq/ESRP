@@ -31,9 +31,30 @@ scene:
   scene_source: OG
   include_robots: true
 
+# robots:
+#   - type: Turtlebot
+#     obs_modalities: [scan, rgb, depth]
+#     scale: 1.0
+#     self_collision: false
+#     action_normalize: true
+#     action_type: continuous
+#     sensor_config:
+#       VisionSensor:
+#         sensor_kwargs:
+#           image_height: 1024
+#           image_width: 1024
+#       ScanSensor:
+#           sensor_kwargs:
+#             min_range: 0.05
+#             max_range: 10.0
+#     controller_config:
+#       base:
+#         name: DifferentialDriveController
+
 robots:
   - type: Test
-    obs_modalities: [rgb, depth, depth_linear]
+    # obs_modalities: [rgb, depth, depth_linear]
+    obs_modalities: [rgb]
     action_normalize: true
     action_type: continuous
     grasping_mode: sticky
@@ -42,6 +63,7 @@ robots:
         sensor_kwargs:
           image_height: 128
           image_width: 128
+          # focal_length: 10.0
 
 objects: []
 

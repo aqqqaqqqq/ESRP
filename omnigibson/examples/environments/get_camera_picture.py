@@ -24,7 +24,7 @@ def save_img(t, file_path):
 
 def capture_top_down_image(cam):
     img = cam.get_obs()[0]['rgb']
-    print(cam.get_obs()[0]['rgb'].shape)
+    # print(cam.get_obs()[0]['rgb'].shape)
     return img
     
 import numpy as np

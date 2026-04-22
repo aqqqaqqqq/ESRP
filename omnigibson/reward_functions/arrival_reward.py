@@ -21,6 +21,7 @@ class ArrivalReward(BaseRewardFunction):
         self._num = obj_num
         self._farrival = first_arrival
         self._arrival_num = 0
+        self._flag = True
 
         # Run super
         super().__init__()
@@ -28,11 +29,21 @@ class ArrivalReward(BaseRewardFunction):
     def reset(self, task, env):
         # Call super first
         self._arrival_num = 0
+        self._flag = True
         super().reset(task, env)
+
+    def calculate_arrival_object(self, task):
+        arrival_num = 0
+        for i in task.objects_to_rearrange:
+            arrival_num += task.check_target(i)
+        return arrival_num
 
     def _step(self, task, env, action):
         # Calculate each object one by one
         reward = 0
+        if self._flag:
+            self._arrival_num = self.calculate_arrival_object(task)
+            self._flag = False
         
         if task._fetch_if == 0 :
             if task.check_target(task._last_name):

@@ -5,7 +5,7 @@ from pathlib import Path
 from statistics import mean
 
 
-DEFAULT_LOG_PATH = "/home/user/Desktop/wq/try/first/more_metric.log"
+DEFAULT_LOG_PATH = "/home/user/Desktop/wq/try/second/more_metric.log"
 
 
 def safe_mean(values):
@@ -53,6 +53,11 @@ def summarize_overall(rows):
     arrival_ratios = [
         row["arrival_num"] / row["obj_num"] for row in rows if row["obj_num"] > 0
     ]
+    rdr_ratios = [
+        float(row["fini_potential"]) / float(row["init_potential"])
+        for row in rows
+        if float(row["init_potential"]) != 0.0
+    ]
     potential_deltas = [
         float(row["fini_potential"]) - float(row["init_potential"]) for row in rows
     ]
@@ -64,6 +69,8 @@ def summarize_overall(rows):
         "timeout_count": timeout_count,
         "avg_step": safe_mean([row["step"] for row in rows]),
         "avg_obj_num": safe_mean([row["obj_num"] for row in rows]),
+        "OSR": safe_mean(arrival_ratios),
+        "RDR": safe_mean(rdr_ratios),
         "avg_arrival_ratio": safe_mean(arrival_ratios),
         "avg_potential_delta": safe_mean(potential_deltas),
         "no_grasp_count": no_grasp_count,
@@ -149,23 +156,51 @@ def summarize_by_obj_num(rows):
     return result
 
 
-def summarize_release_events(rows):
+def summarize_release_section(rows):
     release_events = []
     for row in rows:
         release_events.extend(row["release_events"])
 
-    total = len(release_events)
-    if total == 0:
-        return {
-            "total_releases": 0,
-            "release_on_target_ratio": 0.0,
-            "release_farther_ratio": 0.0,
-            "release_closer_ratio": 0.0,
-            "release_unchanged_ratio": 0.0,
-            "short_hold_ratio_le_5": 0.0,
-            "avg_hold_steps": 0.0,
-        }
+    rows_with_grasp = [row for row in rows if row["grasp_events"]]
+    held_steps_per_episode = []
+    unheld_steps_per_episode = []
 
+    for row in rows_with_grasp:
+        episode_steps = int(row["step"])
+        grasps = row.get("grasp_events", []) or []
+        releases = row.get("release_events", []) or []
+
+        released_durations = 0
+        released_grasp_steps = set()
+        for rel in releases:
+            grasp_step = rel.get("grasp_step")
+            if grasp_step is None:
+                continue
+            grasp_step = int(grasp_step)
+            released_grasp_steps.add(grasp_step)
+
+            duration = rel.get("steps_since_grasp")
+            if duration is None:
+                duration = max(0, int(rel["step"]) - grasp_step)
+            released_durations += max(0, int(duration))
+
+        unreleased_durations = 0
+        for grasp in grasps:
+            grasp_step = grasp.get("step")
+            if grasp_step is None:
+                continue
+            grasp_step = int(grasp_step)
+            if grasp_step in released_grasp_steps:
+                continue
+            unreleased_durations += max(0, episode_steps - grasp_step)
+
+        held_steps = released_durations + unreleased_durations
+        unheld_steps = max(0, episode_steps - held_steps)
+
+        held_steps_per_episode.append(held_steps)
+        unheld_steps_per_episode.append(unheld_steps)
+
+    total = len(release_events)
     hold_steps = [
         event["steps_since_grasp"]
         for event in release_events
@@ -176,18 +211,26 @@ def summarize_release_events(rows):
         "total_releases": total,
         "release_on_target_ratio": (
             sum(1 for event in release_events if event["released_on_target"]) / total
+            if total
+            else 0.0
         ),
         "release_farther_ratio": (
             sum(1 for event in release_events if event["distance_change_vs_grasp"] == "farther")
             / total
+            if total
+            else 0.0
         ),
         "release_closer_ratio": (
             sum(1 for event in release_events if event["distance_change_vs_grasp"] == "closer")
             / total
+            if total
+            else 0.0
         ),
         "release_unchanged_ratio": (
             sum(1 for event in release_events if event["distance_change_vs_grasp"] == "unchanged")
             / total
+            if total
+            else 0.0
         ),
         "short_hold_ratio_le_5": (
             sum(
@@ -196,8 +239,13 @@ def summarize_release_events(rows):
                 if event["steps_since_grasp"] is not None and event["steps_since_grasp"] <= 5
             )
             / total
+            if total
+            else 0.0
         ),
         "avg_hold_steps": safe_mean(hold_steps),
+        "episodes_with_grasp_history": len(rows_with_grasp),
+        "avg_held_steps": safe_mean(held_steps_per_episode),
+        "avg_unheld_steps": safe_mean(unheld_steps_per_episode),
     }
 
 
@@ -261,6 +309,8 @@ def print_overall(summary):
     print(f"timeout_count: {summary['timeout_count']}")
     print(f"avg_step: {summary['avg_step']:.2f}")
     print(f"avg_obj_num: {summary['avg_obj_num']:.2f}")
+    print(f"OSR: {summary['OSR']:.4f}")
+    print(f"RDR: {summary['RDR']:.4f}")
     print(f"avg_arrival_ratio: {summary['avg_arrival_ratio']:.4f}")
     print(f"avg_potential_delta: {summary['avg_potential_delta']:.4f}")
     print(
@@ -324,6 +374,9 @@ def print_release_summary(summary):
     print(f"release_unchanged_ratio: {summary['release_unchanged_ratio']:.4f}")
     print(f"short_hold_ratio_le_5: {summary['short_hold_ratio_le_5']:.4f}")
     print(f"avg_hold_steps: {summary['avg_hold_steps']:.2f}")
+    print(f"episodes_with_grasp_history: {summary['episodes_with_grasp_history']}")
+    print(f"avg_held_steps: {summary['avg_held_steps']:.2f}")
+    print(f"avg_unheld_steps: {summary['avg_unheld_steps']:.2f}")
 
 
 def print_scene_categories(summary):
@@ -357,7 +410,7 @@ def analyze_log(log_path):
     print_overall(summarize_overall(rows))
     print_by_success(summarize_by_success(rows))
     print_by_obj_num(summarize_by_obj_num(rows))
-    print_release_summary(summarize_release_events(rows))
+    print_release_summary(summarize_release_section(rows))
     print_scene_categories(summarize_scene_categories(rows))
 
 

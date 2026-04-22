@@ -29,6 +29,7 @@ from omnigibson.reward_functions.living_reward import LivingReward
 
 import numpy as np
 from omnigibson.termination_conditions.timeout import Timeout
+from omnigibson.examples.environments.get_camera_picture import compute_camera_height_from_polygon
 
 from shapely.geometry import Polygon 
 from shapely.geometry import Point
@@ -121,20 +122,7 @@ class RearrangeDlTask(BaseTask):
 
     def _find_free_area_on_floor_random(self, env):
         # sample an area for the robot
-        floor = self.get_floor(env)
-        floor_xyz = floor.floor_xyz
-        num_points = len(floor_xyz) // 3
-        floor_vertices = []
-        for i in range(num_points):
-            x = floor_xyz[3*i]
-            y = floor_xyz[3*i+1]
-            z = floor_xyz[3*i+2]
-            ## transform pos
-            floor_vertices.append([x, y, z])
-        floor_vertices = remove_duplicate_vertices(floor_vertices)
-        floor_poly = [[v[0], v[2]] for v in floor_vertices]
-        floor_poly = remove_useless_points(floor_poly)
-        print("floor_poly:", floor_poly)
+        floor_poly = self.get_floor_poly(env)
         floor_polygon = Polygon(np.array(floor_poly))
         objs_name = self.get_all_objects_names(env)
         obstacles_polygons = []
@@ -155,6 +143,23 @@ class RearrangeDlTask(BaseTask):
                 return obj
         print("There is no floor.")
         return None
+    
+    def get_floor_poly(self, env):
+        floor = self.get_floor(env)
+        floor_xyz = floor.floor_xyz
+        num_points = len(floor_xyz) // 3
+        floor_vertices = []
+        for i in range(num_points):
+            x = floor_xyz[3*i]
+            y = floor_xyz[3*i+1]
+            z = floor_xyz[3*i+2]
+            ## transform pos
+            floor_vertices.append([x, y, z])
+        floor_vertices = remove_duplicate_vertices(floor_vertices)
+        floor_poly = [[v[0], v[2]] for v in floor_vertices]
+        floor_poly = remove_useless_points(floor_poly)
+        
+        return floor_poly
     
     def get_all_objects_names(self, env):
         self.objects = []

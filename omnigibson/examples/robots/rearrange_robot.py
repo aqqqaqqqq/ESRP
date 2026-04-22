@@ -5,6 +5,7 @@ from omnigibson.macros import gm
 import argparse
 import yaml
 import matplotlib
+import matplotlib.pyplot as plt
 import cProfile
 from omnigibson.examples.environments.new_env import FastEnv
 from omnigibson.utils.bbox_utils import remove_duplicate_vertices, remove_useless_points
@@ -69,6 +70,53 @@ def _save_depth_image(value, output_path):
 
     Image.fromarray((depth * 255).astype(np.uint8)).save(output_path)
 
+
+def _save_single_channel_image(value, output_path):
+    image = _to_numpy(value).astype(np.float32)
+    image = np.squeeze(image)
+    valid = np.isfinite(image)
+    if valid.any():
+        min_value = image[valid].min()
+        max_value = image[valid].max()
+        if max_value > min_value:
+            image = (image - min_value) / (max_value - min_value)
+        else:
+            image = np.zeros_like(image)
+        image[~valid] = 0.0
+    else:
+        image = np.zeros_like(image)
+
+    Image.fromarray((image * 255).astype(np.uint8)).save(output_path)
+
+
+def _save_scan_image(value, output_path):
+    scan = _to_numpy(value).astype(np.float32).reshape(-1)
+    valid = np.isfinite(scan)
+    if valid.any():
+        scan = np.clip(scan, 0.0, 1.0)
+    else:
+        scan = np.zeros_like(scan)
+
+    # Render the 1D scan as a top-down 2D scan map around the robot.
+    n_rays = max(len(scan), 1)
+    angles = np.linspace(0.0, 2.0 * np.pi, n_rays, endpoint=False, dtype=np.float32)
+    x = scan * np.cos(angles)
+    y = scan * np.sin(angles)
+
+    fig, ax = plt.subplots(figsize=(6, 6), dpi=150)
+    ax.scatter(x, y, s=8, c=scan, cmap="viridis", vmin=0.0, vmax=1.0)
+    ax.scatter([0.0], [0.0], s=50, c="red", marker="x")
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xlim(-1.05, 1.05)
+    ax.set_ylim(-1.05, 1.05)
+    ax.set_title("LiDAR Top-Down Scan")
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(output_path)
+    plt.close(fig)
+
 def save_flattened_obs_images(obs, output_dir, step):
     if not isinstance(obs, dict):
         return
@@ -79,7 +127,7 @@ def save_flattened_obs_images(obs, output_dir, step):
             continue
 
         array = _to_numpy(value)
-        if not isinstance(array, np.ndarray) or array.ndim < 2:
+        if not isinstance(array, np.ndarray):
             continue
 
         file_stem = f"{step:06d}_{_sanitize_obs_key(key)}"
@@ -91,6 +139,10 @@ def save_flattened_obs_images(obs, output_dir, step):
             _save_depth_image(array, output_path)
         elif key.endswith("::depth_linear") and array.ndim == 2:
             _save_depth_image(array, output_path)
+        elif key.endswith("::occupancy_grid") and array.ndim in {2, 3}:
+            _save_single_channel_image(array, output_path)
+        elif key.endswith("::scan") and array.ndim in {1, 2}:
+            _save_scan_image(array, output_path)
 
 def add_external_sensors(config):
     config["env"]["external_sensors"] = [
@@ -108,6 +160,30 @@ def add_external_sensors(config):
             "orientation": [-0.5, -0.5, -0.5, 0.5],
             "pose_frame": "scene",
         },
+        # {
+        #     "sensor_type": "ScanSensor",
+        #     "name": "top_lidar",
+        #     "relative_prim_path": "/top_lidar",
+        #     "modalities": ["scan", "occupancy_grid"],
+        #     "sensor_kwargs": {
+        #         "min_range": 0.05,
+        #         "max_range": 20.0,
+        #         "horizontal_fov": 360.0,
+        #         "vertical_fov": 1.0,
+        #         "yaw_offset": 0.0,
+        #         "horizontal_resolution": 1.0,
+        #         "vertical_resolution": 1.0,
+        #         "rotation_rate": 0.0,
+        #         "draw_points": False,
+        #         "draw_lines": False,
+        #         "occupancy_grid_resolution": 512,
+        #         "occupancy_grid_range": 20.0,
+        #         "occupancy_grid_inner_radius": 0.2,
+        #     },
+        #     "position": [0.0, 0.5, 0.0],
+        #     "orientation": [0, 0, 0, 1],
+        #     "pose_frame": "scene",
+        # },
     ]
 
     return config
@@ -135,41 +211,21 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
     env = og.Environment(configs=config)
     rearrangement_env = FastEnv(env)
 
-    room_model = rearrangement_env.env.scene_config["scene_model"]
-    scene_path = rearrangement_env.env.scene_config["scene_type_path"]
-    room_path = os.path.join(scene_path, room_model)
-    with open(room_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    objs = data["objects_info"]["init_info"]
-    floor_xyz = []
-    for obj_n, obj_info in objs.items():
-        if "mesh" not in obj_n:
-            continue
-        if obj_info["args"]["floor_xyz"] is not None:
-            floor_xyz = obj_info["args"]["floor_xyz"]
-            break
-
-    num_points = len(floor_xyz) // 3
-    floor_vertices = []
-    for i in range(num_points):
-        x_floor = floor_xyz[3*i]
-        y_floor = floor_xyz[3*i+1]
-        z_floor = floor_xyz[3*i+2]
-        floor_vertices.append([x_floor, y_floor, z_floor])
-    floor_vertices = remove_duplicate_vertices(floor_vertices)
-    floor_poly = [[v[0], v[2]] for v in floor_vertices]
-    floor_poly = remove_useless_points(floor_poly)
-
+    floor_poly = rearrangement_env.env.task.get_floor_poly(rearrangement_env.env)
     polygon = pol(floor_poly)
     x = polygon.centroid.x
     z = polygon.centroid.y
-    y = 400.0
 
     cam = env.external_sensors["top_cam"]
     y = compute_camera_height_from_polygon(cam, np.array(floor_poly))
     top_down_position = th.tensor([x, y, z])
     top_down_orientation = th.tensor([-0.5, -0.5, -0.5, 0.5])
     cam.set_position_orientation(top_down_position, top_down_orientation, frame="scene")
+
+    # lidar = env.external_sensors["top_lidar"]
+    # lidar_position = th.tensor([x, 1, z-2])
+    # lidar_orientation = th.tensor([0.0, 0.0, 0.0, 1.0])
+    # lidar.set_position_orientation(lidar_position, lidar_orientation, frame="scene")
 
     for i in range(10):
         og.sim.render()
@@ -188,7 +244,8 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
 
     while step != max_steps:
         try:
-            action = int(input("请输入动作编号 (0-5): "))
+            # action = int(input("请输入动作编号 (0-5): "))
+            action = 2
         except ValueError:
             continue
         if action not in [0,1,2,3,4,5]:
@@ -199,14 +256,9 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
         if TAKE_PICTURE:
             save_flattened_obs_images(obs, obs_output_dir, step)
 
-        # rgb_obs = obs[:-1].resize(2048,2048,6)[:,:,:3]
-        # from PIL import Image
-        # im = Image.fromarray(rgb_obs.numpy())
-        reaching_rewards = info['reward']['reward_breakdown']['reaching']
-        potential_rewards = info['reward']['reward_breakdown']['potential']
-        # releasing_rewards = info['reward']['reward_breakdown']['releasing']
-        print(reaching_rewards, potential_rewards)
-        # import pdb; pdb.set_trace()
+        # reaching_rewards = info['reward']['reward_breakdown']['reaching']
+        # potential_rewards = info['reward']['reward_breakdown']['potential']
+
         step += 1
 
     # Always shut down the environment cleanly at the end
