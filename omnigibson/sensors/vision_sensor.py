@@ -583,12 +583,34 @@ class VisionSensor(BaseSensor):
             self._annotators[modality] = None
 
     def remove(self):
+        # Detach all active annotators before tearing down the render product / viewport.
+        for modality, annotator in list(self._annotators.items()):
+            if annotator is not None and self._render_product is not None:
+                try:
+                    annotator.detach([self._render_product])
+                except Exception:
+                    pass
+            self._annotators[modality] = None
+
+        # Destroy render product explicitly. This is important during hot scene reloads because
+        # stale render products can outlive the deleted camera prim and later crash native render code.
+        if self._render_product is not None:
+            try:
+                self._render_product.destroy()
+            except Exception:
+                pass
+            self._render_product = None
+
         # Remove from global sensors dictionary
-        self.SENSORS.pop(self.prim_path)
+        self.SENSORS.pop(self.prim_path, None)
 
         # Remove the viewport if it's not the main viewport
-        if self._viewport.name != "Viewport":
-            self._viewport.destroy()
+        if self._viewport is not None and self._viewport.name != "Viewport":
+            try:
+                self._viewport.destroy()
+            except Exception:
+                pass
+        self._viewport = None
 
         # Run super
         super().remove()

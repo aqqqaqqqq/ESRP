@@ -22,13 +22,13 @@ from omnigibson.examples.robots.rearrange_robot import add_external_sensors, sav
 gm.ENABLE_OBJECT_STATES = True
 gm.ENABLE_TRANSITION_RULES = True
 gm.ENABLE_FLATCACHE = True
-gm.RENDER_VIEWER_CAMERA = True
+gm.RENDER_VIEWER_CAMERA = False
 
-MODEL_PATH = "/home/user/Desktop/wq/try/second/saved_models/4500"
-NEW_LOG = "/home/user/Desktop/wq/pictures/second/more_metric.log"
+MODEL_PATH = "/home/user/Desktop/wq/try/first/saved_models/4500"
+NEW_LOG = "/home/user/Desktop/wq/pictures/first/more_metric.log"
 # SCENE_LIST_PATH = "/home/user/Desktop/rl/omnigibson/data/test_all_data.txt"
-SCENE_LIST_PATH = "/home/user/Desktop/wq/pictures/second/visualize_scene.txt"
-result_path = "/home/user/Desktop/wq/pictures/second"
+SCENE_LIST_PATH = "/home/user/Desktop/wq/pictures/first/visualize_scene.txt"
+result_path = "/home/user/Desktop/wq/pictures/first"
 OBSERVATION_SPACE = Box(low=0, high=255, shape=(98305,), dtype=np.uint8)
 ACTION_SPACE = gym.spaces.Discrete(6)
 
@@ -162,7 +162,7 @@ def main():
             "grasp_events": last_info["eval_metrics"]["grasp_events"],
             "release_events": last_info["eval_metrics"]["release_events"],
         }
-        logger.info(eval_dict)
+        # logger.info(eval_dict)
         rearrangement_env.env.scene_names.remove(scene_name)
 
     og.clear()

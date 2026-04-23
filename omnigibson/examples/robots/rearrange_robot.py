@@ -240,7 +240,7 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
     action_empty = th.zeros(13)
     grasping_obj = None
     TAKE_PICTURE = True
-    obs_output_dir = "/home/user/Desktop/wq/pictures"
+    obs_output_dir = "/home/user/Desktop/wq/pictures/all_obs"
 
     while step != max_steps:
         try:

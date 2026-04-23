@@ -223,6 +223,7 @@ class Environment(gym.Env, GymObservable, Recreatable):
                 sensor.remove()
             self._external_sensors = None
             self._external_sensors_include_in_obs = None
+            VisionSensor.clear()
         
         self.scene.clear()
 
@@ -421,6 +422,9 @@ class Environment(gym.Env, GymObservable, Recreatable):
             self._external_sensors = dict()
             self._external_sensors_include_in_obs = dict()
             for i, sensor_config in enumerate(sensors_config):
+                # Never mutate the original config in-place. Hot scene reloads reuse env_config and would otherwise
+                # lose fields such as position / orientation / include_in_obs after the first load.
+                sensor_config = deepcopy(sensor_config)
                 # Add a name for the object if necessary
                 if "name" not in sensor_config:
                     sensor_config["name"] = f"external_sensor{i}"

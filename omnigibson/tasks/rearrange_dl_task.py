@@ -469,7 +469,7 @@ class RearrangeDlTask(BaseTask):
     def default_termination_config(cls):
         return {
             "max_collisions": 500,
-            "max_steps": 500,
+            "max_steps": 10,
             "fall_height": 0.03,
         }
 
