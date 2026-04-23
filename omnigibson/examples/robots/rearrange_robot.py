@@ -1,5 +1,6 @@
 import os
 import torch as th
+import numpy as np
 import omnigibson as og
 from omnigibson.macros import gm
 import argparse
@@ -9,10 +10,8 @@ import matplotlib.pyplot as plt
 import cProfile
 from omnigibson.examples.environments.new_env import FastEnv
 from omnigibson.utils.bbox_utils import remove_duplicate_vertices, remove_useless_points
-from omnigibson.examples.environments.get_camera_picture import compute_camera_height_from_polygon, save_img, capture_top_down_image
+from omnigibson.examples.environments.get_camera_picture import save_img
 import json
-from shapely.geometry import Polygon as pol
-import numpy as np
 from PIL import Image
 
 matplotlib.use('Agg')
@@ -23,6 +22,8 @@ gm.ENABLE_OBJECT_STATES = False
 gm.ENABLE_TRANSITION_RULES = False
 gm.ENABLE_FLATCACHE = True
 gm.RENDER_VIEWER_CAMERA = True
+
+USE_TOP_DOWN = True
 
 CONTROL_MODES = dict(
     random="Use autonomous random actions (default)",
@@ -150,10 +151,10 @@ def add_external_sensors(config):
             "sensor_type": "VisionSensor",
             "name": "top_cam",
             "relative_prim_path": "/top_cam",
-            "modalities": ["rgb", "depth"],
+            "modalities": ["rgb"],
             "sensor_kwargs": {
-                "image_height": 2048,
-                "image_width": 2048,
+                "image_height": 128,
+                "image_width": 128,
                 "focal_length": 15.0,
             },
             "position": [0.0, 8.0, 0.0],
@@ -194,7 +195,6 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
     Queries the user to select a robot, the controllers, a scene and a type of input (random actions or teleop)
     """
     # Choose scene to load
-    gm.ENABLE_FLATCACHE = True
     config_filename = config_filename = os.path.join(og.example_config_path, f"rearrange.yaml")
     config = yaml.load(open(config_filename, "r"), Loader=yaml.FullLoader)
     
@@ -203,24 +203,13 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
 
     config["render"]["viewer_width"] = 2048
     config["render"]["viewer_height"] = 2048
-
     config["env"]["use_external_obs"] = True
-    if config["env"]["use_external_obs"]:
+    config["env"]["use_top_down"] = USE_TOP_DOWN
+    if USE_TOP_DOWN:
         config = add_external_sensors(config)
 
     env = og.Environment(configs=config)
     rearrangement_env = FastEnv(env)
-
-    floor_poly = rearrangement_env.env.task.get_floor_poly(rearrangement_env.env)
-    polygon = pol(floor_poly)
-    x = polygon.centroid.x
-    z = polygon.centroid.y
-
-    cam = env.external_sensors["top_cam"]
-    y = compute_camera_height_from_polygon(cam, np.array(floor_poly))
-    top_down_position = th.tensor([x, y, z])
-    top_down_orientation = th.tensor([-0.5, -0.5, -0.5, 0.5])
-    cam.set_position_orientation(top_down_position, top_down_orientation, frame="scene")
 
     # lidar = env.external_sensors["top_lidar"]
     # lidar_position = th.tensor([x, 1, z-2])

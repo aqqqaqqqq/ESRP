@@ -18,73 +18,60 @@ from torchvision import transforms
 
 torch, nn = try_import_torch()
 
+IMAGE_SIZE = 128
+RGB_FEATURE_DIM = 368
+RGB_TOP_DOWN_FEATURE_DIM = 240
+TOP_DOWN_FEATURE_DIM = 128
+LAYOUT_FEATURE_DIM = 128
+GRASP_FEATURE_DIM = 16
+
+
+def _build_image_encoder(output_dim):
+    return nn.Sequential(
+        nn.Conv2d(3, 32, kernel_size=8, stride=4),
+        nn.ReLU(),
+        nn.Conv2d(32, 64, kernel_size=4, stride=2),
+        nn.ReLU(),
+        nn.Conv2d(64, 128, kernel_size=3, stride=2),
+        nn.ReLU(),
+        nn.Conv2d(128, 256, kernel_size=3, stride=1),
+        nn.ReLU(),
+        nn.AdaptiveAvgPool2d((1, 1)),
+        nn.Flatten(),
+        nn.Linear(256, output_dim),
+    )
+
 class VizDoomEncoderLite(nn.Module):
     def __init__(self, output_dim=512):
         super().__init__()
-        features1 = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=8, stride=4),     # (32, 31, 31)
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2),    # (64, 14, 14)
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3, stride=2),   # (128, 6, 6)
-            nn.ReLU(),
-            nn.Conv2d(128, 256, kernel_size=3, stride=1),  # (256, 4, 4)
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1))                   # (256, 1, 1)
-            )
-        features2 = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=8, stride=4),     # (32, 31, 31)
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2),    # (64, 14, 14)
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3, stride=2),   # (128, 6, 6)
-            nn.ReLU(),
-            nn.Conv2d(128, 256, kernel_size=3, stride=1),  # (256, 4, 4)
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1))                   # (256, 1, 1)
-            )
-
-        fc1 = nn.Sequential(
-            nn.Flatten(),                  # (256,)
-            nn.Linear(256, 368),           # å‚æ•°ï¼š131K
-            )
-        fc2 = nn.Sequential(
-            nn.Flatten(),                  # (256,)
-            nn.Linear(256, 128),           # å‚æ•°ï¼š131K
-            )
-        
-        self.encoder_rgb = nn.Sequential(features1, fc1)
-        self.encoder_layout = nn.Sequential(features2, fc2)
-        self.encoder_grasp = nn.Embedding(num_embeddings = 2, embedding_dim = 16)
+        self.encoder_rgb = _build_image_encoder(RGB_FEATURE_DIM)
+        self.encoder_layout = _build_image_encoder(LAYOUT_FEATURE_DIM)
+        self.encoder_grasp = nn.Embedding(num_embeddings=2, embedding_dim=GRASP_FEATURE_DIM)
 
     def forward(self, x):
         batch_shape = x.shape[:-1]
-        rgb_layout = x[:,:,:-1].reshape(*batch_shape,128,128,6)
-        grasping = x[:,:,-1]
+        image_stack = x[:, :, :-1].reshape(*batch_shape, IMAGE_SIZE, IMAGE_SIZE, 6)
+        grasping = x[:, :, -1]
 
-        rgb = rgb_layout[:,:,:,:,:3]
-        rgb = rgb.float() / 255.0  # Normalize input to [0, 1]
+        rgb = image_stack[:, :, :, :, :3]
+        rgb = rgb.float() / 255.0
         B, T, H, W, C = rgb.shape
-        rgb = rgb.permute(0, 1, 4, 2, 3).contiguous()  # [B, T, 3, H, W]
-        rgb = rgb.view(B * T, C, H, W)                 # [B*T, 3, 128, 128]
-        rgb = self.encoder_rgb(rgb)                    # [B*T, 368, 1, 1]
-        rgb = rgb.view(B, T, -1)                       # [B, T, 368]
-        
-        layout = rgb_layout[:,:,:,:,3:]
-        layout = layout.float() / 255.0  # Normalize input to [0, 1]
+        rgb = rgb.permute(0, 1, 4, 2, 3).contiguous().view(B * T, C, H, W)
+        rgb = self.encoder_rgb(rgb).view(B, T, -1)
+
+        layout = image_stack[:, :, :, :, 3:6]
+        layout = layout.float() / 255.0
         B, T, H, W, C = layout.shape
-        layout = layout.permute(0, 1, 4, 2, 3).contiguous()  # [B, T, 3, H, W]
-        layout = layout.view(B * T, C, H, W)                 # [B*T, 3, 128, 128]
-        layout = self.encoder_layout(layout)                 # [B*T, 128, 1, 1]
-        layout = layout.view(B, T, -1)                       # [B, T, 128]
+        layout = layout.permute(0, 1, 4, 2, 3).contiguous().view(B * T, C, H, W)
+        layout = self.encoder_layout(layout).view(B, T, -1)
 
         grasp = grasping.long()
         B, T = grasp.shape
-        grasp = grasp.view(B * T) 
+        grasp = grasp.view(B * T)
         grasp = self.encoder_grasp(grasp)
-        grasp = grasp.view(B , T, -1) 
-        
-        feature = torch.cat([rgb, grasp, layout], dim=2)
+        grasp = grasp.view(B, T, -1)
+
+        feature = torch.cat([rgb, layout, grasp], dim=2)
 
         return feature
     
@@ -92,66 +79,32 @@ class VizDoomEncoderLite(nn.Module):
 class NoLSTMVizDoomEncoderLite(nn.Module):
     def __init__(self, output_dim=512):
         super().__init__()
-        features1 = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=8, stride=4),     # (32, 31, 31)
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2),    # (64, 14, 14)
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3, stride=2),   # (128, 6, 6)
-            nn.ReLU(),
-            nn.Conv2d(128, 256, kernel_size=3, stride=1),  # (256, 4, 4)
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1))                   # (256, 1, 1)
-            )
-        features2 = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=8, stride=4),     # (32, 31, 31)
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2),    # (64, 14, 14)
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3, stride=2),   # (128, 6, 6)
-            nn.ReLU(),
-            nn.Conv2d(128, 256, kernel_size=3, stride=1),  # (256, 4, 4)
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1))                   # (256, 1, 1)
-            )
-
-        fc1 = nn.Sequential(
-            nn.Flatten(),                  # (256,)
-            nn.Linear(256, 368),           # å‚æ•°ï¼š131K
-            )
-        fc2 = nn.Sequential(
-            nn.Flatten(),                  # (256,)
-            nn.Linear(256, 128),           # å‚æ•°ï¼š131K
-            )
-        
-        self.encoder_rgb = nn.Sequential(features1, fc1)
-        self.encoder_layout = nn.Sequential(features2, fc2)
-        self.encoder_grasp = nn.Embedding(num_embeddings = 2, embedding_dim = 16)
+        self.encoder_rgb = _build_image_encoder(RGB_FEATURE_DIM)
+        self.encoder_layout = _build_image_encoder(LAYOUT_FEATURE_DIM)
+        self.encoder_grasp = nn.Embedding(num_embeddings=2, embedding_dim=GRASP_FEATURE_DIM)
 
     def forward(self, x):
         batch_size = x.shape[0]
-        rgb_layout = x[:,:-1].reshape(batch_size,128,128,6)
-        grasping = x[:,-1]
+        image_stack = x[:, :-1].reshape(batch_size, IMAGE_SIZE, IMAGE_SIZE, 6)
+        grasping = x[:, -1]
 
-        rgb = rgb_layout[:,:,:,:3]
-        rgb = rgb.float() / 255.0  # Normalize input to [0, 1]
+        rgb = image_stack[:, :, :, :3]
+        rgb = rgb.float() / 255.0
         B, H, W, C = rgb.shape
-        rgb = rgb.permute(0, 3, 1, 2).contiguous()  # [B, 3, H, W]
-        rgb = self.encoder_rgb(rgb)                    # [B*T, 368, 1, 1]
-        rgb = rgb.view(B, -1)
-        
-        layout = rgb_layout[:,:,:,3:]
+        rgb = rgb.permute(0, 3, 1, 2).contiguous()
+        rgb = self.encoder_rgb(rgb).view(B, -1)
+
+        layout = image_stack[:, :, :, 3:6]
         layout = layout.float() / 255.0
         B, H, W, C = layout.shape
         layout = layout.permute(0, 3, 1, 2).contiguous()
-        layout = self.encoder_layout(layout)
-        layout = layout.view(B, -1)
+        layout = self.encoder_layout(layout).view(B, -1)
 
-        grasp = grasping.long() 
+        grasp = grasping.long()
         grasp = self.encoder_grasp(grasp)
-        grasp = grasp.view(B, -1) 
-        
-        feature = torch.cat([rgb, grasp, layout], dim=1)
+        grasp = grasp.view(B, -1)
+
+        feature = torch.cat([rgb, layout, grasp], dim=1)
 
         return feature
     
@@ -175,40 +128,68 @@ class VizDoomEncoderLite_pretrained(nn.Module):
         for param in self.image_features.parameters():
             param.requires_grad = False
 
-        self.fc_rgb = nn.Linear(1024, 368)
-        self.fc_layout = nn.Linear(1024, 128)
-        self.encoder_grasp = nn.Embedding(num_embeddings = 2, embedding_dim = 16)
+        self.fc_rgb = nn.Linear(1024, RGB_FEATURE_DIM)
+        self.fc_layout = nn.Linear(1024, LAYOUT_FEATURE_DIM)
+        self.encoder_grasp = nn.Embedding(num_embeddings=2, embedding_dim=GRASP_FEATURE_DIM)
 
     def forward(self, x):
         batch_shape = x.shape[:-1]
-        rgb_layout = x[:,:,:-1].reshape(*batch_shape,128,128,6)
-        grasping = x[:,:,-1]
+        image_stack = x[:, :, :-1].reshape(*batch_shape, IMAGE_SIZE, IMAGE_SIZE, 6)
+        grasping = x[:, :, -1]
 
-        rgb = rgb_layout[:,:,:,:,:3]
-        # rgb = rgb.float() / 255.0  # Normalize input to [0, 1]
+        rgb = image_stack[:, :, :, :, :3]
         B, T, H, W, C = rgb.shape
-        rgb = rgb.permute(0, 1, 4, 2, 3).contiguous()  # [B, T, 3, H, W]
-        rgb = rgb.view(B * T, C, H, W)                 # [B*T, 3, 128, 128]
-        rgb = self.fc_rgb(self.image_features(preprocess_uint8_tensor(rgb)))                   # [B*T, 368, 1, 1]
-        rgb = rgb.view(B, T, -1)                       # [B, T, 368]
-        
-        layout = rgb_layout[:,:,:,:,3:]
-        # layout = layout.float() / 255.0  # Normalize input to [0, 1]
+        rgb = rgb.permute(0, 1, 4, 2, 3).contiguous().view(B * T, C, H, W)
+        rgb = self.fc_rgb(self.image_features(preprocess_uint8_tensor(rgb))).view(B, T, -1)
+
+        layout = image_stack[:, :, :, :, 3:6]
         B, T, H, W, C = layout.shape
-        layout = layout.permute(0, 1, 4, 2, 3).contiguous()  # [B, T, 3, H, W]
-        layout = layout.view(B * T, C, H, W)                 # [B*T, 3, 128, 128]
-        layout = self.fc_layout(self.image_features(preprocess_uint8_tensor(layout)))                # [B*T, 128, 1, 1]
-        layout = layout.view(B, T, -1)                       # [B, T, 128]
+        layout = layout.permute(0, 1, 4, 2, 3).contiguous().view(B * T, C, H, W)
+        layout = self.fc_layout(self.image_features(preprocess_uint8_tensor(layout))).view(B, T, -1)
 
         grasp = grasping.long()
         B, T = grasp.shape
-        grasp = grasp.view(B * T) 
+        grasp = grasp.view(B * T)
         grasp = self.encoder_grasp(grasp)
-        grasp = grasp.view(B , T, -1) 
-        
-        feature = torch.cat([rgb, grasp, layout], dim=2)
+        grasp = grasp.view(B, T, -1)
+
+        feature = torch.cat([rgb, layout, grasp], dim=2)
 
         return feature
+
+
+class VizDoomEncoderLiteWithTopDown(nn.Module):
+    def __init__(self, output_dim=512):
+        super().__init__()
+        self.encoder_rgb = _build_image_encoder(RGB_TOP_DOWN_FEATURE_DIM)
+        self.encoder_top_down = _build_image_encoder(TOP_DOWN_FEATURE_DIM)
+        self.encoder_layout = _build_image_encoder(LAYOUT_FEATURE_DIM)
+        self.encoder_grasp = nn.Embedding(num_embeddings=2, embedding_dim=GRASP_FEATURE_DIM)
+
+    def forward(self, x):
+        batch_shape = x.shape[:-1]
+        image_stack = x[:, :, :-1].reshape(*batch_shape, IMAGE_SIZE, IMAGE_SIZE, 9)
+        grasping = x[:, :, -1]
+
+        rgb = image_stack[:, :, :, :, :3].float() / 255.0
+        B, T, H, W, C = rgb.shape
+        rgb = rgb.permute(0, 1, 4, 2, 3).contiguous().view(B * T, C, H, W)
+        rgb = self.encoder_rgb(rgb).view(B, T, -1)
+
+        top_down = image_stack[:, :, :, :, 3:6].float() / 255.0
+        B, T, H, W, C = top_down.shape
+        top_down = top_down.permute(0, 1, 4, 2, 3).contiguous().view(B * T, C, H, W)
+        top_down = self.encoder_top_down(top_down).view(B, T, -1)
+
+        layout = image_stack[:, :, :, :, 6:9].float() / 255.0
+        B, T, H, W, C = layout.shape
+        layout = layout.permute(0, 1, 4, 2, 3).contiguous().view(B * T, C, H, W)
+        layout = self.encoder_layout(layout).view(B, T, -1)
+
+        grasp = grasping.long().view(B * T)
+        grasp = self.encoder_grasp(grasp).view(B, T, -1)
+
+        return torch.cat([rgb, top_down, layout, grasp], dim=2)
     
 class LSTMContainingRLModule(TorchRLModule, ValueFunctionAPI):
     @override(TorchRLModule)
@@ -364,6 +345,72 @@ class NoLSTMRLModule(TorchRLModule, ValueFunctionAPI):
         # Push through our FC net.
         embeddings = self._fc_net(_obs)
         return embeddings
+
+class LSTMContainingRLModuleWithTopDown(TorchRLModule, ValueFunctionAPI):
+    @override(TorchRLModule)
+    def setup(self):
+        in_size = 512
+
+        self.nature_cnn = VizDoomEncoderLiteWithTopDown()
+
+        self._lstm_cell_size = self.model_config.get("lstm_cell_size", 512)
+        self._lstm = nn.LSTM(in_size, self._lstm_cell_size, batch_first=True)
+        in_size = self._lstm_cell_size
+
+        layers = []
+        dense_layers = self.model_config.get("dense_layers", [128, 128])
+        for out_size in dense_layers:
+            layers.append(nn.Linear(in_size, out_size))
+            layers.append(nn.Tanh())
+            in_size = out_size
+
+        self._fc_net = nn.Sequential(*layers)
+        self._pi_head = nn.Linear(in_size, self.action_space.n)
+        self._values = nn.Linear(in_size, 1)
+        normc_initializer(0.01)(self._values.weight)
+
+    @override(TorchRLModule)
+    def get_initial_state(self) -> Any:
+        return {
+            "h": np.zeros(shape=(self._lstm_cell_size,), dtype=np.float32),
+            "c": np.zeros(shape=(self._lstm_cell_size,), dtype=np.float32),
+        }
+
+    @override(TorchRLModule)
+    def _forward(self, batch, **kwargs):
+        embeddings, state_outs = self._compute_embeddings_and_state_outs(batch)
+        logits = self._pi_head(embeddings)
+        return {
+            Columns.ACTION_DIST_INPUTS: logits,
+            Columns.STATE_OUT: state_outs,
+        }
+
+    @override(TorchRLModule)
+    def _forward_train(self, batch, **kwargs):
+        embeddings, state_outs = self._compute_embeddings_and_state_outs(batch)
+        logits = self._pi_head(embeddings)
+        return {
+            Columns.ACTION_DIST_INPUTS: logits,
+            Columns.STATE_OUT: state_outs,
+            Columns.EMBEDDINGS: embeddings,
+        }
+
+    @override(ValueFunctionAPI)
+    def compute_values(
+        self, batch: Dict[str, Any], embeddings: Optional[Any] = None
+    ) -> TensorType:
+        if embeddings is None:
+            embeddings, _ = self._compute_embeddings_and_state_outs(batch)
+        return self._values(embeddings).squeeze(-1)
+
+    def _compute_embeddings_and_state_outs(self, batch):
+        obs = batch[Columns.OBS]
+        state_in = batch[Columns.STATE_IN]
+        h, c = state_in["h"], state_in["c"]
+        _obs = self.nature_cnn(obs)
+        embeddings, (h, c) = self._lstm(_obs, (h.unsqueeze(0), c.unsqueeze(0)))
+        embeddings = self._fc_net(embeddings)
+        return embeddings, {"h": h.squeeze(0), "c": c.squeeze(0)}
     
 class LSTMContainingRLModule_pretrained(TorchRLModule, ValueFunctionAPI):
     @override(TorchRLModule)

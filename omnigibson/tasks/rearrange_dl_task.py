@@ -115,7 +115,7 @@ class RearrangeDlTask(BaseTask):
         )
         rewards["releasing"] = ReleasingReward(
             r_releasing=self._reward_config["r_releasing"],
-            release_distance_thresh=0.1
+            release_distance_thresh=0.5
         )
         rewards["living"] = LivingReward(r_living = self._reward_config["r_living"])
         return rewards
@@ -469,7 +469,7 @@ class RearrangeDlTask(BaseTask):
     def default_termination_config(cls):
         return {
             "max_collisions": 500,
-            "max_steps": 10,
+            "max_steps": 500,
             "fall_height": 0.03,
         }
 
@@ -480,7 +480,7 @@ class RearrangeDlTask(BaseTask):
             "first_arrival": 1.0,
             "r_potential": 0.5,
             "r_reaching": 0.1,
-            "r_grasping": 0.1,
-            "r_releasing": 0.05,
+            "r_grasping": 0.01,
+            "r_releasing": 0.01,
             "r_living": 0
         }

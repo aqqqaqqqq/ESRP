@@ -22,6 +22,7 @@ from collections import OrderedDict
 from collections.abc import Iterable
 import gymnasium as gym
 import pynvml
+from omnigibson.examples.environments.get_camera_picture import compute_camera_height_from_polygon
 
 def visualize_environment(floor_area_poly, obstacles_poly, new_robot_circle, old_robot_circle, new_obj_poly=None, old_obj_poly=None):
     fig, ax = plt.subplots()
@@ -402,6 +403,22 @@ class FastEnv(gym.Env):
     def _get_robot(self):
         return self.env.robots[0]
 
+    def _position_top_down_camera(self):
+        if not getattr(self.env, "_use_top_down", False):
+            return
+        if not self.env.external_sensors or "top_cam" not in self.env.external_sensors:
+            return
+
+        floor_poly = self.env.task.get_floor_poly(self.env)
+        polygon = Polygon(floor_poly)
+        cam = self.env.external_sensors["top_cam"]
+        x = polygon.centroid.x
+        z = polygon.centroid.y
+        y = compute_camera_height_from_polygon(cam, np.array(floor_poly))
+        top_down_position = th.tensor([x, y, z], dtype=th.float32)
+        top_down_orientation = th.tensor([-0.5, -0.5, -0.5, 0.5], dtype=th.float32)
+        cam.set_position_orientation(top_down_position, top_down_orientation, frame="scene")
+
     def _keep_relative_to_robot(pos, quat, old_robot_pos, old_robot_quat, new_robot_pos, new_robot_quat):
         pos_in_robot_frame, quat_in_robot_frame = T.relative_pose_transform(pos, quat, old_robot_pos, old_robot_quat)
         pos_in_world_frame, quat_in_world_frame = T.pose_transform(new_robot_pos, new_robot_quat, pos_in_robot_frame, quat_in_robot_frame)
@@ -598,19 +615,23 @@ class FastEnv(gym.Env):
         return observations, rewards, terminates, truncates, infos
 
     def reset(self, seed, options = None):
-        # if monitor_gpu_nvml() > 4000:
-        #     os.kill(os.getpid(), 9)
+        if monitor_gpu_nvml() > 4200:
+            os.kill(os.getpid(), 9)
         self.obstacles_cache = {}
-        obs, info = self.env.reset()
+        self.env.reset(get_obs=False)
+        self._position_top_down_camera()
+        og.sim.step()
+        obs, info = self.env.get_obs()
         self.grasping_obj = None
         init_grasping_obj = th.tensor(0, dtype=obs.dtype).unsqueeze(0)
         obs = th.cat([obs, init_grasping_obj])
         return obs, info
 
 class FakeEnv(gym.Env):
-    def __init__(self):
+    def __init__(self, use_top_down=False):
         super().__init__()
-        self.observation_space = Box(low=0, high=255, shape=(98305,), dtype=np.uint8)
+        obs_dim = 147457 if use_top_down else 98305
+        self.observation_space = Box(low=0, high=255, shape=(obs_dim,), dtype=np.uint8)
         self.action_space = gym.spaces.Discrete(6)
 
     def reset(self, seed = None, options = None):
@@ -618,8 +639,12 @@ class FakeEnv(gym.Env):
 
 def make_env(cfg):
     import os
+    from omnigibson.examples.robots.rearrange_robot import add_external_sensors
+
+    use_top_down = cfg.get("use_top_down", False)
+
     if cfg.worker_index == 0:
-        return FakeEnv()
+        return FakeEnv(use_top_down=use_top_down)
     
     config_filename = config_filename = os.path.join(og.example_config_path, f"rearrange.yaml")
     config = yaml.load(open(config_filename, "r"), Loader=yaml.FullLoader)
@@ -635,6 +660,9 @@ def make_env(cfg):
 
     config["scene"]["scene_model"] = "8148b1a7-7c15-4b53-9be3-8b5a617ba9d2_Bedroom-29109_target.json"
     config["scene"]["scene_type_path"] = scene_path
+    config["env"]["use_top_down"] = use_top_down
+    if use_top_down:
+        config = add_external_sensors(config)
 
     scene_names = []
     with open('/home/user/Desktop/rl/omnigibson/data/3d_front/verified_train_data.txt', 'r') as f:

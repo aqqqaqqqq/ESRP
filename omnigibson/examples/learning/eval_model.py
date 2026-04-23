@@ -1,7 +1,6 @@
 import os
-
-import gymnasium as gym
 import numpy as np
+import gymnasium as gym
 import omnigibson as og
 import torch
 import yaml
@@ -12,10 +11,9 @@ from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 
 from omnigibson.examples.environments.new_env import FastEnv
 from omnigibson.macros import gm
-from omnigibson.utils.model_utils import LSTMContainingRLModule
+from omnigibson.utils.model_utils import LSTMContainingRLModule, LSTMContainingRLModuleWithTopDown
 
-from shapely.geometry import Polygon as pol
-from omnigibson.examples.environments.get_camera_picture import compute_camera_height_from_polygon, capture_top_down_image
+from omnigibson.examples.environments.get_camera_picture import capture_top_down_image
 from omnigibson.examples.robots.rearrange_robot import add_external_sensors, save_img
 
 
@@ -29,12 +27,19 @@ NEW_LOG = "/home/user/Desktop/wq/pictures/first/more_metric.log"
 # SCENE_LIST_PATH = "/home/user/Desktop/rl/omnigibson/data/test_all_data.txt"
 SCENE_LIST_PATH = "/home/user/Desktop/wq/pictures/first/visualize_scene.txt"
 result_path = "/home/user/Desktop/wq/pictures/first"
-OBSERVATION_SPACE = Box(low=0, high=255, shape=(98305,), dtype=np.uint8)
 ACTION_SPACE = gym.spaces.Discrete(6)
+USE_TOP_DOWN = False
+OBSERVATION_SPACE = Box(
+    low=0,
+    high=255,
+    shape=(147457 if USE_TOP_DOWN else 98305,),
+    dtype=np.uint8,
+)
 
 def main():
+    module_class = LSTMContainingRLModuleWithTopDown if USE_TOP_DOWN else LSTMContainingRLModule
     spec = RLModuleSpec(
-        LSTMContainingRLModule,
+        module_class,
         observation_space=OBSERVATION_SPACE,
         action_space=ACTION_SPACE,
     )
@@ -66,7 +71,8 @@ def main():
     print("len:", len(config["env"]["scene_names"]))
 
     TAKE_PICTURE = True
-    if TAKE_PICTURE:
+    config["env"]["use_top_down"] = USE_TOP_DOWN
+    if USE_TOP_DOWN:
         config = add_external_sensors(config)
 
     env = og.Environment(configs=config)
@@ -86,17 +92,7 @@ def main():
             Columns.OBS: obs.unsqueeze(0).unsqueeze(0),
         }
 
-        if TAKE_PICTURE:
-            floor_poly = rearrangement_env.env.task.get_floor_poly(rearrangement_env.env)
-            polygon = pol(floor_poly)
-            x = polygon.centroid.x
-            z = polygon.centroid.y
-
-            cam = rearrangement_env.env.external_sensors["top_cam"]
-            y = compute_camera_height_from_polygon(cam, np.array(floor_poly))
-            top_down_position = torch.tensor([x, y, z])
-            top_down_orientation = torch.tensor([-0.5, -0.5, -0.5, 0.5])
-            cam.set_position_orientation(top_down_position, top_down_orientation, frame="scene")
+        cam = rearrangement_env.env.external_sensors["top_cam"] if USE_TOP_DOWN else None
 
         infos = []
         scene_step = 0
@@ -124,7 +120,7 @@ def main():
                     min_distance_step_per_object[object_name] = scene_step
             infos.append(info)
 
-            if TAKE_PICTURE:
+            if TAKE_PICTURE and USE_TOP_DOWN:
                 img = capture_top_down_image(cam)
                 file_path = os.path.join(result_path, scene_name)
                 file_name = str(scene_step) + ".png"

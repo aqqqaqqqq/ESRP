@@ -45,7 +45,10 @@ import numpy as np
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 import torch
 from omnigibson.utils.model_utils import (
-    LSTMContainingRLModule, NoLSTMRLModule, LSTMContainingRLModule_pretrained
+    LSTMContainingRLModule,
+    LSTMContainingRLModuleWithTopDown,
+    NoLSTMRLModule,
+    LSTMContainingRLModule_pretrained,
 )
 from ray.rllib.utils.test_utils import (
     add_rllib_example_script_args,
@@ -61,6 +64,8 @@ import json
 import os
 
 parser = add_rllib_example_script_args(default_reward=300.0, default_timesteps=2000000)
+
+USE_TOP_DOWN = False
 
 tune.register_env("env", make_env)
 
@@ -86,19 +91,20 @@ def log_episode_info(episode, **kwargs):
 
 if __name__ == "__main__":
     # --- 手动设置 resume 路径（None 表示不恢复） ---
-    resume_learner_group = "/home/user/Desktop/wq/try/third/saved_learner_group/1340"
-    # resume_learner_group = None  # 若不想恢复则设为 None
+    # resume_learner_group = "/home/user/Desktop/wq/try/third/saved_learner_group/1340"
+    resume_learner_group = None  # 若不想恢复则设为 None
     # ------------------------------------------------
 
     args = parser.parse_args()
     run_id = f"PPO_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    module_class = LSTMContainingRLModuleWithTopDown if USE_TOP_DOWN else LSTMContainingRLModule
 
     base_config = (
         get_trainable_cls(args.algo)
         .get_default_config()
         .environment(
             env="env",
-            env_config={'run_id': run_id},
+            env_config={"run_id": run_id, "use_top_down": USE_TOP_DOWN},
             disable_env_checking=True
         )
         .training(
@@ -119,7 +125,7 @@ if __name__ == "__main__":
         .learners(num_gpus_per_learner=0.5)
         .rl_module(
             rl_module_spec=RLModuleSpec(
-                module_class=LSTMContainingRLModule,
+                module_class=module_class,
                 model_config={"max_seq_len": 64},
             ),
         )
@@ -156,4 +162,3 @@ if __name__ == "__main__":
             learner_group.save_to_path(os.path.join('/home/user/Desktop/wq/try/third/saved_learner_group/', str(step)))
 
         step += 1
-

@@ -80,6 +80,7 @@ class Environment(gym.Env, GymObservable, Recreatable):
         self._rearrangement = self.env_config["rearrangement"]
         # control if using external sensors
         self._use_external_obs = self.env_config["use_external_obs"]
+        self._use_top_down = self.env_config["use_top_down"]
         self.device = self.env_config["device"] if self.env_config["device"] else "cpu"
         self._initial_pos_z_offset = self.env_config[
             "initial_pos_z_offset"
@@ -484,10 +485,9 @@ class Environment(gym.Env, GymObservable, Recreatable):
             self.observation_space = gym.spaces.Dict(recursively_generate_flat_dict(dic=obs_space))
 
         if self._rearrangement:
-            # self.observation_space = gym.spaces.Dict(recursively_generate_rearrange_dict(dic=obs_space))
             self._layout = th.tensor(np.array(Image.open(self._layout_path).resize((128,128),Image.LANCZOS)))
-            # self.observation_space = Box(low=0, high=255, shape=(128, 128, 6), dtype=np.uint8)
-            self.observation_space = Box(low=0, high=255, shape=(98305,), dtype=np.uint8)
+            obs_dim = 147457 if self._use_top_down else 98305
+            self.observation_space = Box(low=0, high=255, shape=(obs_dim,), dtype=np.uint8)
 
         return self.observation_space
 
@@ -633,15 +633,19 @@ class Environment(gym.Env, GymObservable, Recreatable):
         # Rearrangement task
         if self._rearrangement:
             if self._use_external_obs:
-                # use external sensors
+                 # save dict
                 obs = recursively_generate_flat_dict(dic=obs)
             else:
-                # only use rgb + layout
+                # train need tensor
                 robot = self.robots[0]
                 obs_robot = recursively_generate_rearrange_dict(dic=obs.get(robot.name, None))
-                rgb = obs_robot['rgb'][:, :, :3]  # [128, 128, 3]
-                layout = self._layout[:, :, :3]   # [128, 128, 3]
-                obs = th.cat([rgb, layout], dim = 2).flatten()  # [98304]
+                rgb = obs_robot["rgb"][:, :, :3]
+                layout = self._layout[:, :, :3]
+                if self._use_top_down:
+                    top_down = obs["external"]["top_cam"]["rgb"][:, :, :3]
+                    obs = th.cat([rgb, top_down, layout], dim=2).flatten()
+                else:
+                    obs = th.cat([rgb, layout], dim=2).flatten()
 
         return obs, info
 
@@ -968,6 +972,7 @@ class Environment(gym.Env, GymObservable, Recreatable):
                 "flatten_obs_space": False,
                 "initial_pos_z_offset": 0.1,
                 "use_external_obs": False,
+                "use_top_down": False,
                 "external_sensors": None,
             },
             # Rendering kwargs

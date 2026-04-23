@@ -6,6 +6,7 @@ env:
   flatten_action_space: false # (bool): whether to flatten the action space as a sinle 1D-array
   flatten_obs_space: false # (bool): whether the observation space should be flattened when generated
   use_external_obs: false # (bool): Whether to use external observations or not
+  use_top_down: false
   rearrangement: true #(bool) Whether to be ued to rearrange
   modify_reload_model: true #(bool) Whether to reload model when achieve one epoch
   initial_pos_z_offset: 0.1
