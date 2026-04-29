@@ -639,7 +639,7 @@ class FakeEnv(gym.Env):
 
 def make_env(cfg):
     import os
-    from omnigibson.examples.robots.rearrange_robot import add_external_sensors
+    from omnigibson.examples.robots.rearrange_robot import add_top_down_camera
 
     use_top_down = cfg.get("use_top_down", False)
 
@@ -662,7 +662,7 @@ def make_env(cfg):
     config["scene"]["scene_type_path"] = scene_path
     config["env"]["use_top_down"] = use_top_down
     if use_top_down:
-        config = add_external_sensors(config)
+        config = add_top_down_camera(config)
 
     scene_names = []
     with open('/home/user/Desktop/rl/omnigibson/data/3d_front/verified_train_data.txt', 'r') as f:

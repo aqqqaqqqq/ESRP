@@ -17,3 +17,4 @@ from omnigibson.robots.turtlebot import Turtlebot
 from omnigibson.robots.two_wheel_robot import TwoWheelRobot
 from omnigibson.robots.vx300s import VX300S
 from omnigibson.robots.test import Test
+from omnigibson.robots.test_lidar import TestLidar

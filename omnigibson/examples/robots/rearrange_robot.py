@@ -145,7 +145,7 @@ def save_flattened_obs_images(obs, output_dir, step):
         elif key.endswith("::scan") and array.ndim in {1, 2}:
             _save_scan_image(array, output_path)
 
-def add_external_sensors(config):
+def add_top_down_camera(config, image_height=128, image_width=128, focal_length=15.0):
     config["env"]["external_sensors"] = [
         {
             "sensor_type": "VisionSensor",
@@ -153,38 +153,44 @@ def add_external_sensors(config):
             "relative_prim_path": "/top_cam",
             "modalities": ["rgb"],
             "sensor_kwargs": {
-                "image_height": 128,
-                "image_width": 128,
-                "focal_length": 15.0,
+                "image_height": image_height,
+                "image_width": image_width,
+                "focal_length": focal_length,
             },
             "position": [0.0, 8.0, 0.0],
             "orientation": [-0.5, -0.5, -0.5, 0.5],
             "pose_frame": "scene",
         },
-        # {
-        #     "sensor_type": "ScanSensor",
-        #     "name": "top_lidar",
-        #     "relative_prim_path": "/top_lidar",
-        #     "modalities": ["scan", "occupancy_grid"],
-        #     "sensor_kwargs": {
-        #         "min_range": 0.05,
-        #         "max_range": 20.0,
-        #         "horizontal_fov": 360.0,
-        #         "vertical_fov": 1.0,
-        #         "yaw_offset": 0.0,
-        #         "horizontal_resolution": 1.0,
-        #         "vertical_resolution": 1.0,
-        #         "rotation_rate": 0.0,
-        #         "draw_points": False,
-        #         "draw_lines": False,
-        #         "occupancy_grid_resolution": 512,
-        #         "occupancy_grid_range": 20.0,
-        #         "occupancy_grid_inner_radius": 0.2,
-        #     },
-        #     "position": [0.0, 0.5, 0.0],
-        #     "orientation": [0, 0, 0, 1],
-        #     "pose_frame": "scene",
-        # },
+    ]
+
+    return config
+
+def add_lidar_sensor(config):
+    config["env"]["external_sensors"] = [
+        {
+            "sensor_type": "ScanSensor",
+            "name": "top_lidar",
+            "relative_prim_path": "/top_lidar",
+            "modalities": ["scan", "occupancy_grid"],
+            "sensor_kwargs": {
+                "min_range": 0.05,
+                "max_range": 20.0,
+                "horizontal_fov": 360.0,
+                "vertical_fov": 1.0,
+                "yaw_offset": 0.0,
+                "horizontal_resolution": 1.0,
+                "vertical_resolution": 1.0,
+                "rotation_rate": 0.0,
+                "draw_points": False,
+                "draw_lines": False,
+                "occupancy_grid_resolution": 512,
+                "occupancy_grid_range": 20.0,
+                "occupancy_grid_inner_radius": 0.2,
+            },
+            "position": [0.0, 0.5, 0.0],
+            "orientation": [0, 0, 0, 1],
+            "pose_frame": "scene",
+        },
     ]
 
     return config
@@ -195,21 +201,25 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
     Queries the user to select a robot, the controllers, a scene and a type of input (random actions or teleop)
     """
     # Choose scene to load
-    config_filename = config_filename = os.path.join(og.example_config_path, f"rearrange.yaml")
+    config_filename = config_filename = os.path.join(og.example_config_path, f"try.yaml")
     config = yaml.load(open(config_filename, "r"), Loader=yaml.FullLoader)
     
-    scene_name = "0a8d471a-2587-458a-9214-586e003e9cf9_LivingDiningRoom-4017"
+    # scene_name = "0a8d471a-2587-458a-9214-586e003e9cf9_LivingDiningRoom-4017"
+    scene_name = "864a6e55-ad69-4803-8922-391d57d061b9_MasterBedroom-32709"
     config['env']['scene_names'] = [scene_name]
 
-    config["render"]["viewer_width"] = 2048
-    config["render"]["viewer_height"] = 2048
+    config["render"]["viewer_width"] = int(os.environ.get("OG_REARRANGE_VIEWER_WIDTH", 1024))
+    config["render"]["viewer_height"] = int(os.environ.get("OG_REARRANGE_VIEWER_HEIGHT", 1024))
     config["env"]["use_external_obs"] = True
     config["env"]["use_top_down"] = USE_TOP_DOWN
     if USE_TOP_DOWN:
-        config = add_external_sensors(config)
+        config = add_top_down_camera(config, 1024, 1024)
 
     env = og.Environment(configs=config)
     rearrangement_env = FastEnv(env)
+    if USE_TOP_DOWN:
+        rearrangement_env._position_top_down_camera()
+        og.sim.step()
 
     # lidar = env.external_sensors["top_lidar"]
     # lidar_position = th.tensor([x, 1, z-2])
@@ -233,8 +243,8 @@ def main(random_selection=False, headless=False, short_exec=False, quickstart=Fa
 
     while step != max_steps:
         try:
-            # action = int(input("请输入动作编号 (0-5): "))
-            action = 2
+            action = int(input("请输入动作编号 (0-5): "))
+            # action = 2
         except ValueError:
             continue
         if action not in [0,1,2,3,4,5]:

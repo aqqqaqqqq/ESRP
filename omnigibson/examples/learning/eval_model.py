@@ -14,7 +14,7 @@ from omnigibson.macros import gm
 from omnigibson.utils.model_utils import LSTMContainingRLModule, LSTMContainingRLModuleWithTopDown
 
 from omnigibson.examples.environments.get_camera_picture import capture_top_down_image
-from omnigibson.examples.robots.rearrange_robot import add_external_sensors, save_img
+from omnigibson.examples.robots.rearrange_robot import add_top_down_camera, save_img
 
 
 gm.ENABLE_OBJECT_STATES = True
@@ -73,7 +73,7 @@ def main():
     TAKE_PICTURE = True
     config["env"]["use_top_down"] = USE_TOP_DOWN
     if USE_TOP_DOWN:
-        config = add_external_sensors(config)
+        config = add_top_down_camera(config)
 
     env = og.Environment(configs=config)
     rearrangement_env = FastEnv(env)
