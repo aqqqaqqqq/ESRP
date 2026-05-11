@@ -29,6 +29,28 @@ def capture_top_down_image(cam):
     
 import numpy as np
 
+def _to_float_pair(value, default):
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if value is None:
+        return default
+    try:
+        first, second = value
+        return float(first), float(second)
+    except (TypeError, ValueError):
+        return default
+
+
+def _positive_float(value, default):
+    if hasattr(value, "item"):
+        value = value.item()
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
 def compute_camera_height_from_polygon(sensor, polygon: np.ndarray) -> float:
     """
     计算俯视相机高度，使给定多边形在画面中尽可能充满  renderProductResolution 指定的图像。
@@ -46,17 +68,32 @@ def compute_camera_height_from_polygon(sensor, polygon: np.ndarray) -> float:
     # —————————————————————————————
     # 1. 读属性
     # —————————————————————————————
+    params = sensor.camera_parameters
+    load_config = getattr(sensor, "_load_config", {})
+
     # 物理传感器（aperture）宽/高，单位 mm
-    ap_w_mm, ap_h_mm = sensor.camera_parameters["cameraAperture"].tolist()
-    print("ap_w_mm, ap_h_mm:", ap_w_mm, ap_h_mm)
+    ap_w_mm, ap_h_mm = _to_float_pair(params.get("cameraAperture"), (20.955, 15.2908))
+    if ap_w_mm <= 0 or ap_h_mm <= 0:
+        ap_w_mm, ap_h_mm = 20.955, 15.2908
+
     # 渲染产物的像素分辨率
-    img_w_px, img_h_px = sensor.camera_parameters["renderProductResolution"].tolist()
-    print("img_w_px, img_h_px:", img_w_px, img_h_px)
+    fallback_resolution = (
+        _positive_float(load_config.get("image_width"), 128.0),
+        _positive_float(load_config.get("image_height"), 128.0),
+    )
+    img_w_px, img_h_px = _to_float_pair(params.get("renderProductResolution"), fallback_resolution)
+    if img_w_px <= 0 or img_h_px <= 0:
+        img_w_px, img_h_px = fallback_resolution
+    if img_w_px <= 0 or img_h_px <= 0:
+        raise ValueError(f"Invalid top-down camera resolution: {(img_w_px, img_h_px)}")
+
     # 场景单位到米的转换：1 su = metersPerSceneUnit 米
-    m_per_su = sensor.camera_parameters["metersPerSceneUnit"]
+    m_per_su = _positive_float(params.get("metersPerSceneUnit"), 1.0)
     # 焦距 mm
-    f_mm = sensor.camera_parameters["cameraFocalLength"]
-    print("f_mm:", f_mm)
+    f_mm = _positive_float(
+        params.get("cameraFocalLength"),
+        _positive_float(load_config.get("focal_length"), 15.0),
+    )
 
     # —————————————————————————————
     # 2. 按分辨率裁剪 aperture

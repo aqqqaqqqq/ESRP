@@ -24,6 +24,8 @@ RGB_TOP_DOWN_FEATURE_DIM = 240
 TOP_DOWN_FEATURE_DIM = 128
 LAYOUT_FEATURE_DIM = 128
 GRASP_FEATURE_DIM = 16
+RGB_TRANSFORMER_FEATURE_DIM = 256
+LAYOUT_TRANSFORMER_FEATURE_DIM = 240
 
 
 def _build_image_encoder(output_dim):
@@ -190,7 +192,159 @@ class VizDoomEncoderLiteWithTopDown(nn.Module):
         grasp = self.encoder_grasp(grasp).view(B, T, -1)
 
         return torch.cat([rgb, top_down, layout, grasp], dim=2)
-    
+
+
+class RGBLayoutEncoderLite(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.encoder_rgb = _build_image_encoder(RGB_TRANSFORMER_FEATURE_DIM)
+        self.encoder_layout = _build_image_encoder(LAYOUT_TRANSFORMER_FEATURE_DIM)
+        self.encoder_grasp = nn.Embedding(num_embeddings=2, embedding_dim=GRASP_FEATURE_DIM)
+
+    def forward(self, x):
+        batch_shape = x.shape[:-1]
+        expected_obs_dim = IMAGE_SIZE * IMAGE_SIZE * 6 + 1
+        if x.shape[-1] != expected_obs_dim:
+            raise ValueError(
+                f"RGBLayoutEncoderLite expects obs dim {expected_obs_dim} "
+                f"(rgb + layout + flag), got {x.shape[-1]}."
+            )
+
+        grasping = x[:, :, -1]
+        image_stack = x[:, :, :-1].reshape(*batch_shape, IMAGE_SIZE, IMAGE_SIZE, 6)
+
+        rgb = image_stack[:, :, :, :, :3].float() / 255.0
+        B, T, H, W, C = rgb.shape
+        rgb = rgb.permute(0, 1, 4, 2, 3).contiguous().view(B * T, C, H, W)
+        rgb = self.encoder_rgb(rgb).view(B, T, -1)
+
+        layout = image_stack[:, :, :, :, 3:6].float() / 255.0
+        B, T, H, W, C = layout.shape
+        layout = layout.permute(0, 1, 4, 2, 3).contiguous().view(B * T, C, H, W)
+        layout = self.encoder_layout(layout).view(B, T, -1)
+
+        grasp = grasping.long().clamp(min=0, max=1).view(B * T)
+        grasp = self.encoder_grasp(grasp).view(B, T, -1)
+
+        return torch.cat([rgb, layout, grasp], dim=2)
+
+
+class TransformerRGBLayoutRLModule(TorchRLModule, ValueFunctionAPI):
+    @override(TorchRLModule)
+    def setup(self):
+        in_size = 512
+
+        self.nature_cnn = RGBLayoutEncoderLite()
+
+        self._transformer_dim = self.model_config.get("transformer_dim", 512)
+        self._memory_len = self.model_config.get("memory_len", 64)
+        self._max_seq_len = self.model_config.get("max_seq_len", 64)
+        if self._transformer_dim != in_size:
+            self._input_projection = nn.Linear(in_size, self._transformer_dim)
+        else:
+            self._input_projection = nn.Identity()
+
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=self._transformer_dim,
+            nhead=self.model_config.get("num_attention_heads", 8),
+            dim_feedforward=self.model_config.get("transformer_ff_dim", 2048),
+            dropout=self.model_config.get("transformer_dropout", 0.0),
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+        self._transformer = nn.TransformerEncoder(
+            encoder_layer,
+            num_layers=self.model_config.get("num_transformer_layers", 2),
+        )
+        self._pos_embedding = nn.Parameter(
+            torch.zeros(1, self._memory_len + self._max_seq_len, self._transformer_dim)
+        )
+        nn.init.normal_(self._pos_embedding, std=0.02)
+
+        in_size = self._transformer_dim
+        layers = []
+        dense_layers = self.model_config.get("dense_layers", [128, 128])
+        for out_size in dense_layers:
+            layers.append(nn.Linear(in_size, out_size))
+            layers.append(nn.Tanh())
+            in_size = out_size
+
+        self._fc_net = nn.Sequential(*layers)
+        self._pi_head = nn.Linear(in_size, self.action_space.n)
+        self._values = nn.Linear(in_size, 1)
+        normc_initializer(0.01)(self._values.weight)
+
+    @override(TorchRLModule)
+    def get_initial_state(self) -> Any:
+        return {
+            "memory": np.zeros(
+                shape=(self._memory_len, self._transformer_dim),
+                dtype=np.float32,
+            ),
+        }
+
+    @override(TorchRLModule)
+    def _forward(self, batch, **kwargs):
+        embeddings, state_outs = self._compute_embeddings_and_state_outs(batch)
+        logits = self._pi_head(embeddings)
+        return {
+            Columns.ACTION_DIST_INPUTS: logits,
+            Columns.STATE_OUT: state_outs,
+        }
+
+    @override(TorchRLModule)
+    def _forward_train(self, batch, **kwargs):
+        embeddings, state_outs = self._compute_embeddings_and_state_outs(batch)
+        logits = self._pi_head(embeddings)
+        return {
+            Columns.ACTION_DIST_INPUTS: logits,
+            Columns.STATE_OUT: state_outs,
+            Columns.EMBEDDINGS: embeddings,
+        }
+
+    @override(ValueFunctionAPI)
+    def compute_values(
+        self, batch: Dict[str, Any], embeddings: Optional[Any] = None
+    ) -> TensorType:
+        if embeddings is None:
+            embeddings, _ = self._compute_embeddings_and_state_outs(batch)
+        return self._values(embeddings).squeeze(-1)
+
+    def _compute_embeddings_and_state_outs(self, batch):
+        obs = batch[Columns.OBS]
+        state_in = batch[Columns.STATE_IN]
+        memory = state_in["memory"]
+
+        tokens = self._input_projection(self.nature_cnn(obs))
+        B, T, _ = tokens.shape
+        if memory.shape[1] != self._memory_len:
+            memory = memory[:, -self._memory_len:]
+
+        context = torch.cat([memory, tokens], dim=1)
+        context_len = context.shape[1]
+        if context_len > self._pos_embedding.shape[1]:
+            raise ValueError(
+                f"Transformer context length {context_len} exceeds configured "
+                f"limit {self._pos_embedding.shape[1]}. Increase memory_len or max_seq_len."
+            )
+
+        context = context + self._pos_embedding[:, :context_len]
+        causal_mask = torch.full(
+            (context_len, context_len),
+            float("-inf"),
+            device=context.device,
+        )
+        causal_mask = torch.triu(causal_mask, diagonal=1)
+
+        transformed = self._transformer(context, mask=causal_mask)
+        embeddings = transformed[:, -T:]
+        embeddings = self._fc_net(embeddings)
+
+        next_memory = torch.cat([memory, tokens], dim=1)[:, -self._memory_len:]
+        return embeddings, {"memory": next_memory}
+
+
 class LSTMContainingRLModule(TorchRLModule, ValueFunctionAPI):
     @override(TorchRLModule)
     def setup(self):

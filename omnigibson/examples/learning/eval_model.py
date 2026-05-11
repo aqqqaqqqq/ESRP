@@ -11,7 +11,11 @@ from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 
 from omnigibson.examples.environments.new_env import FastEnv
 from omnigibson.macros import gm
-from omnigibson.utils.model_utils import LSTMContainingRLModule, LSTMContainingRLModuleWithTopDown
+from omnigibson.utils.model_utils import (
+    LSTMContainingRLModule,
+    LSTMContainingRLModuleWithTopDown,
+    TransformerRGBLayoutRLModule,
+)
 
 from omnigibson.examples.environments.get_camera_picture import capture_top_down_image
 from omnigibson.examples.robots.rearrange_robot import add_top_down_camera, save_img
@@ -22,13 +26,14 @@ gm.ENABLE_TRANSITION_RULES = True
 gm.ENABLE_FLATCACHE = True
 gm.RENDER_VIEWER_CAMERA = False
 
-MODEL_PATH = "/home/user/Desktop/wq/try/first/saved_models/4500"
-NEW_LOG = "/home/user/Desktop/wq/pictures/first/more_metric.log"
-# SCENE_LIST_PATH = "/home/user/Desktop/rl/omnigibson/data/test_all_data.txt"
-SCENE_LIST_PATH = "/home/user/Desktop/wq/pictures/first/visualize_scene.txt"
-result_path = "/home/user/Desktop/wq/pictures/first"
+MODEL_PATH = "/home/user/Desktop/wq/try/third/saved_models/4500"
+NEW_LOG = "/home/user/Desktop/wq/try/third/more_metric.log"
+SCENE_LIST_PATH = "/home/user/Desktop/rl/omnigibson/data/test_all_data.txt"
+# SCENE_LIST_PATH = "/home/user/Desktop/wq/pictures/first/visualize_scene.txt"
+result_path = "/home/user/Desktop/wq/pictures/third"
 ACTION_SPACE = gym.spaces.Discrete(6)
-USE_TOP_DOWN = False
+USE_TOP_DOWN = True
+USE_TRANSFORMER = False
 OBSERVATION_SPACE = Box(
     low=0,
     high=255,
@@ -36,12 +41,38 @@ OBSERVATION_SPACE = Box(
     dtype=np.uint8,
 )
 
+TRANSFORMER_MODEL_CONFIG = {
+    "max_seq_len": 64,
+    "memory_len": 64,
+    "transformer_dim": 512,
+    "num_transformer_layers": 2,
+    "num_attention_heads": 8,
+    "transformer_ff_dim": 2048,
+    "transformer_dropout": 0.0,
+}
+
+
+def build_state_in(initial_state):
+    return {
+        key: torch.tensor(value, dtype=torch.float32).unsqueeze(0)
+        for key, value in initial_state.items()
+    }
+
+
 def main():
-    module_class = LSTMContainingRLModuleWithTopDown if USE_TOP_DOWN else LSTMContainingRLModule
+    if USE_TRANSFORMER:
+        assert not USE_TOP_DOWN, "TransformerRGBLayoutRLModule 只适配 rgb + layout + flag，不带 top-down。"
+        module_class = TransformerRGBLayoutRLModule
+        model_config = TRANSFORMER_MODEL_CONFIG
+    else:
+        module_class = LSTMContainingRLModuleWithTopDown if USE_TOP_DOWN else LSTMContainingRLModule
+        model_config = {"max_seq_len": 64}
+
     spec = RLModuleSpec(
         module_class,
         observation_space=OBSERVATION_SPACE,
         action_space=ACTION_SPACE,
+        model_config=model_config,
     )
     rl_module = spec.build()
     rl_module.restore_from_path(path=MODEL_PATH)
@@ -70,7 +101,7 @@ def main():
     print(config["env"]["scene_names"])
     print("len:", len(config["env"]["scene_names"]))
 
-    TAKE_PICTURE = True
+    TAKE_PICTURE = False
     config["env"]["use_top_down"] = USE_TOP_DOWN
     if USE_TOP_DOWN:
         config = add_top_down_camera(config)
@@ -85,10 +116,7 @@ def main():
         obs, _ = rearrangement_env.reset(seed=None)
         initial_state = rl_module.get_initial_state()
         module_input = {
-            Columns.STATE_IN: {
-                "h": torch.tensor(initial_state["h"]).unsqueeze(0),
-                "c": torch.tensor(initial_state["c"]).unsqueeze(0),
-            },
+            Columns.STATE_IN: build_state_in(initial_state),
             Columns.OBS: obs.unsqueeze(0).unsqueeze(0),
         }
 
@@ -158,7 +186,7 @@ def main():
             "grasp_events": last_info["eval_metrics"]["grasp_events"],
             "release_events": last_info["eval_metrics"]["release_events"],
         }
-        # logger.info(eval_dict)
+        logger.info(eval_dict)
         rearrangement_env.env.scene_names.remove(scene_name)
 
     og.clear()

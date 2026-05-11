@@ -614,11 +614,12 @@ class FastEnv(gym.Env):
         # print(result[4])
         return observations, rewards, terminates, truncates, infos
 
-    def reset(self, seed, options = None):
-        if monitor_gpu_nvml() > 4200:
+    def reset(self, seed=None, options = None):
+        if monitor_gpu_nvml() > 4500:
             os.kill(os.getpid(), 9)
         self.obstacles_cache = {}
         self.env.reset(get_obs=False)
+        og.sim.step()
         self._position_top_down_camera()
         og.sim.step()
         obs, info = self.env.get_obs()
